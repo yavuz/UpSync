@@ -20,6 +20,59 @@ struct WatchedFolder: Codable, Identifiable, Hashable {
   }
 }
 
+/// Bir klasörün o anki transfer durumu. Panel bunu kart üzerinde gösterir.
+struct TransferState: Hashable {
+  var inFlight: Int = 0
+  var completed: Int = 0
+  var failed: Int = 0
+  var lastEvent: ActivityEntry.Kind?
+  var lastFileName: String?
+  var lastEventDate: Date?
+
+  var isActive: Bool { inFlight > 0 }
+
+  mutating func started() {
+    inFlight += 1
+  }
+
+  mutating func finished(_ kind: ActivityEntry.Kind, fileName: String, at date: Date) {
+    inFlight = max(0, inFlight - 1)
+    if kind == .failed {
+      failed += 1
+    } else {
+      completed += 1
+    }
+    lastEvent = kind
+    lastFileName = fileName
+    lastEventDate = date
+  }
+
+  /// Bir tur bittiğinde sayaçları sıfırla; kart "3 dosya" derken bir önceki
+  /// turdan kalanları saymasın.
+  mutating func resetCountsIfIdle() {
+    guard inFlight == 0 else { return }
+    completed = 0
+    failed = 0
+  }
+}
+
+/// Menü çubuğu ikonunun yansıttığı toplu durum.
+enum GlobalState {
+  case idle
+  case syncing
+  case error
+  case starting
+
+  var symbol: String {
+    switch self {
+    case .idle: return "arrow.up.bin"
+    case .syncing: return "arrow.up.bin.fill"
+    case .error: return "exclamationmark.triangle.fill"
+    case .starting: return "arrow.up.bin"
+    }
+  }
+}
+
 /// Motorun bildirdiği canlı durum.
 struct FolderStatus: Hashable {
   var id: String

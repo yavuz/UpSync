@@ -6,6 +6,7 @@ final class AppModel: ObservableObject {
   @Published private(set) var folders: [WatchedFolder] = []
   @Published private(set) var statuses: [String: FolderStatus] = [:]
   @Published private(set) var activity: [ActivityEntry] = []
+  @Published private(set) var transfers: [String: TransferState] = [:]
   @Published private(set) var engineRunning = false
   @Published private(set) var startupError: String?
   /// Şifre sorusunu gösterecek arayüz geri çağrısı (AppDelegate bağlar).
@@ -89,6 +90,7 @@ final class AppModel: ObservableObject {
   func removeFolder(_ folder: WatchedFolder) {
     folders.removeAll { $0.id == folder.id }
     statuses[folder.id] = nil
+    transfers[folder.id] = nil
     FolderStore.save(folders)
     Task { _ = try? await engine?.call("removeFolder", ["id": folder.id]) }
   }
@@ -231,19 +233,32 @@ final class AppModel: ObservableObject {
     switch event["type"] as? String {
     case "transfer":
       let kind = event["kind"] as? String ?? "upload"
-      switch event["phase"] as? String {
+      let phase = event["phase"] as? String
+
+      switch phase {
+      case "start":
+        // Aktivite listesine yazmıyoruz (şişer), ama panel ilerlemeyi
+        // buradan biliyor.
+        if let folderId {
+          var state = transfers[folderId] ?? TransferState()
+          state.resetCountsIfIdle()
+          state.started()
+          transfers[folderId] = state
+        }
+
       case "done":
         let ms = event["ms"] as? Int
-        log(
-          kind == "delete" ? .deleted : .uploaded,
-          path: path,
-          detail: ms.map { "\($0) ms" },
-          folderId: folderId
-        )
+        let entryKind: ActivityEntry.Kind =
+          kind == "delete" ? .deleted : (kind == "download" ? .downloaded : .uploaded)
+        log(entryKind, path: path, detail: ms.map { "\($0) ms" }, folderId: folderId)
+        finishTransfer(folderId, kind: entryKind, path: path)
+
       case "error":
         log(.failed, path: path, detail: event["message"] as? String, folderId: folderId)
+        finishTransfer(folderId, kind: .failed, path: path)
+
       default:
-        break  // 'start' aktivite listesini şişirmesin
+        break
       }
 
     case "skipped":
@@ -286,6 +301,32 @@ final class AppModel: ObservableObject {
   private func applyStatus(_ result: Any?) {
     guard let dict = result as? [String: Any], let status = FolderStatus(dict) else { return }
     statuses[status.id] = status
+  }
+
+  private func finishTransfer(_ folderId: String?, kind: ActivityEntry.Kind, path: String) {
+    guard let folderId else { return }
+    var state = transfers[folderId] ?? TransferState()
+    let name = path.isEmpty ? "" : URL(fileURLWithPath: path).lastPathComponent
+    state.finished(kind, fileName: name, at: Date())
+    transfers[folderId] = state
+  }
+
+  func transferState(_ folderId: String) -> TransferState {
+    transfers[folderId] ?? TransferState()
+  }
+
+  /// Menü çubuğu ikonunun yansıttığı toplu durum.
+  var globalState: GlobalState {
+    if startupError != nil { return .error }
+    if !engineRunning { return .starting }
+    if transfers.values.contains(where: { $0.isActive }) { return .syncing }
+    if statuses.values.contains(where: { $0.error != nil }) { return .error }
+    if transfers.values.contains(where: { $0.failed > 0 }) { return .error }
+    return .idle
+  }
+
+  var activeFolderCount: Int {
+    folders.filter { statuses[$0.id]?.watching == true }.count
   }
 
   private func log(_ kind: ActivityEntry.Kind, path: String, detail: String?, folderId: String?) {

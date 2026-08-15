@@ -6,16 +6,38 @@ struct UpSyncApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
   var body: some Scene {
-    MenuBarExtra("UpSync", systemImage: "arrow.up.bin") {
-      MenuBarView()
+    // .window stili olmadan MenuBarExtra yerel bir NSMenu çiziyor ve
+    // içine kart, ilerleme çubuğu, özel yerleşim konulamıyor.
+    MenuBarExtra {
+      PanelView()
         .environmentObject(delegate.model)
+    } label: {
+      MenuBarLabel(model: delegate.model)
     }
+    .menuBarExtraStyle(.window)
 
     Window("UpSync Activity", id: "activity") {
       ActivityView()
         .environmentObject(delegate.model)
     }
+    .defaultSize(width: 720, height: 480)
+
+    Window("UpSync Settings", id: "settings") {
+      SettingsView()
+        .environmentObject(delegate.model)
+    }
+    .defaultSize(width: 720, height: 460)
     .windowResizability(.contentSize)
+  }
+}
+
+/// Menü çubuğu ikonu toplu durumu yansıtır: boşta / aktarım / hata.
+/// Ayrı bir View olması şart - App gövdesi ObservableObject'i gözlemlemez.
+struct MenuBarLabel: View {
+  @ObservedObject var model: AppModel
+
+  var body: some View {
+    Image(systemName: model.globalState.symbol)
   }
 }
 
