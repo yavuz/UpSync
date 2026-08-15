@@ -59,6 +59,14 @@ export async function startSftpServer({ root, username = 'test', password = 'tes
 }
 
 function bindSftp(sftp, resolve) {
+  // Ölçüm için: hangi protokol çağrısı kaç kez geldi.
+  globalThis.__sftpOps = globalThis.__sftpOps || {};
+  const _on = sftp.on.bind(sftp);
+  sftp.on = (event, handler) => _on(event, (...args) => {
+    globalThis.__sftpOps[event] = (globalThis.__sftpOps[event] || 0) + 1;
+    return handler(...args);
+  });
+
   const handles = new Map();
   let seq = 0;
   const newHandle = payload => {

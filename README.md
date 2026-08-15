@@ -257,6 +257,21 @@ it with exponential backoff.
 2. `transfer.ts` fired sync deletions inside `forEach` without awaiting them, so
    `sync()` returned early and deletion errors were swallowed.
 
+**Save-to-server latency is ~150 ms**, most of which is deliberate: chokidar
+waits for the file size to stop changing before uploading, so a half-written
+file never goes up. Measured against a process writing a 3 MB file in chunks:
+
+| stability threshold | latency | large file |
+|---|---|---|
+| 200 ms (was) | 316 ms | complete |
+| **100 ms (now)** | **117 ms** | complete |
+| 50 ms | 102 ms | complete |
+| off | 101 ms | **truncated** |
+
+End to end on an 8000-file tree: watcher ready in ~300 ms, single save lands in
+154 ms, a 100-file burst finishes in 313 ms (320 files/sec), engine idles at
+38 MB.
+
 **File watching** uses FSEvents (chokidar 3 + `fsevents`) — one stream for the
 whole tree. chokidar 4 dropped FSEvents on macOS and falls back to one
 `fs.watch` per path; combined with the 256-descriptor soft limit that launchd

@@ -261,6 +261,20 @@ motoru denetler ve ölürse üstel geri çekilmeyle yeniden başlatır.
 2. `transfer.ts` sync silmelerini `forEach` içinde await etmeden tetikliyordu;
    `sync()` erken dönüyor ve silme hataları yutuluyordu.
 
+**Kaydet→sunucu gecikmesi ~150 ms** ve büyük kısmı bilinçli: chokidar dosya
+boyutu sabitlenene kadar bekliyor, böylece yarım yazılmış dosya yüklenmiyor.
+3 MB'lık dosyayı parça parça yazan bir süreçle ölçüm:
+
+| eşik | gecikme | büyük dosya |
+|---|---|---|
+| 200 ms (önce) | 316 ms | tam |
+| **100 ms (şimdi)** | **117 ms** | tam |
+| 50 ms | 102 ms | tam |
+| kapalı | 101 ms | **yarım** |
+
+8000 dosyalık ağaçta uçtan uca: izleyici ~300 ms'de hazır, tek kayıt 154 ms'de
+sunucuda, 100 dosyalık toplu kayıt 313 ms (320 dosya/sn), motor boşta 38 MB.
+
 **Dosya izleme** FSEvents ile yapılır (chokidar 3 + `fsevents`) — tüm ağaç için
 tek akış. chokidar 4 macOS'ta FSEvents desteğini kaldırıp dosya başına
 `fs.watch`'a düşüyor; launchd'nin GUI uygulamalarına verdiği 256 tanıtıcı
