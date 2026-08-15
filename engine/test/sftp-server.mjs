@@ -101,8 +101,15 @@ function bindSftp(sftp, resolve) {
     mtime: Math.floor(stat.mtimeMs / 1000),
   });
 
+  // Performans ölçümü için yapay gidiş-dönüş gecikmesi. Gerçek bir sunucuda
+  // her protokol çağrısı bir RTT demek; localhost'ta bu maliyet görünmez.
+  const rtt = Number(process.env.UPSYNC_TEST_RTT || 0);
+
   const guard = async (reqid, fn) => {
     try {
+      if (rtt > 0) {
+        await new Promise(r => setTimeout(r, rtt));
+      }
       await fn();
     } catch (err) {
       sftp.status(reqid, errno(err));

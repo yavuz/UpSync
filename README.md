@@ -272,6 +272,17 @@ End to end on an 8000-file tree: watcher ready in ~300 ms, single save lands in
 154 ms, a 100-file burst finishes in 313 ms (320 files/sec), engine idles at
 38 MB.
 
+**Round trips matter more than CPU** once a real server is involved. An upload
+costs 6 SFTP protocol calls; each one is a round trip. Permissions and
+timestamps used to be two separate `FSETSTAT` packets and are now merged into
+one, which removes exactly one round trip per file. Measured against a test
+server with 40 ms of simulated latency, isolating the protocol path (n=20):
+
+| | median |
+|---|---|
+| separate (7 calls) | 255.7 ms |
+| **merged (6 calls)** | **213.6 ms** |
+
 **File watching** uses FSEvents (chokidar 3 + `fsevents`) — one stream for the
 whole tree. chokidar 4 dropped FSEvents on macOS and falls back to one
 `fs.watch` per path; combined with the 256-descriptor soft limit that launchd

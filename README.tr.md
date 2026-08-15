@@ -275,6 +275,17 @@ boyutu sabitlenene kadar bekliyor, böylece yarım yazılmış dosya yüklenmiyo
 8000 dosyalık ağaçta uçtan uca: izleyici ~300 ms'de hazır, tek kayıt 154 ms'de
 sunucuda, 100 dosyalık toplu kayıt 313 ms (320 dosya/sn), motor boşta 38 MB.
 
+**Gerçek sunucu söz konusu olunca CPU değil gidiş-dönüş sayısı belirleyici.**
+Bir yükleme 6 SFTP protokol çağrısı; her biri bir gidiş-dönüş. İzin ve zaman
+damgası eskiden iki ayrı `FSETSTAT` paketiydi, artık tek pakette birleşiyor —
+dosya başına tam bir gidiş-dönüş eksiliyor. 40 ms yapay gecikmeli test
+sunucusuna karşı, protokol yolu izole edilerek ölçüldü (n=20):
+
+| | medyan |
+|---|---|
+| ayrı (7 çağrı) | 255.7 ms |
+| **birleşik (6 çağrı)** | **213.6 ms** |
+
 **Dosya izleme** FSEvents ile yapılır (chokidar 3 + `fsevents`) — tüm ağaç için
 tek akış. chokidar 4 macOS'ta FSEvents desteğini kaldırıp dosya başına
 `fs.watch`'a düşüyor; launchd'nin GUI uygulamalarına verdiği 256 tanıtıcı

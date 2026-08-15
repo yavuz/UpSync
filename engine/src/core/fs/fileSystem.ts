@@ -78,6 +78,21 @@ export default abstract class FileSystem {
   abstract mkdir(dir: string): Promise<void>;
   abstract ensureDir(dir: string): Promise<void>;
   abstract chmod(path: string, mode: number): Promise<void>;
+
+  /// Açık bir dosya tanıtıcısına izin ve zaman damgasını yazar.
+  ///
+  /// Varsayılan uygulama sadece zaman damgasını ayarlar: FTP ve yerel dosya
+  /// sisteminde izin zaten dosya oluşturulurken veriliyor, tanıtıcı üzerinden
+  /// ayrı bir chmod yolu yok. SFTP bunu geçersiz kılıp izin + zamanı tek
+  /// FSETSTAT paketinde gönderiyor.
+  async setAttributes(
+    fd: FileHandle,
+    attrs: { mode?: number; atime?: number; mtime?: number }
+  ): Promise<void> {
+    if (attrs.atime !== undefined && attrs.mtime !== undefined) {
+      await this.futimes(fd, attrs.atime, attrs.mtime);
+    }
+  }
   abstract list(dir: string, option?): Promise<FileEntry[]>;
   abstract lstat(path: string): Promise<FileStats>;
   abstract readlink(path: string): Promise<string>;

@@ -2,12 +2,12 @@
   "name": "upsync-engine",
   "version": "0.1.0",
   "private": true,
-  "description": "UpSync senkron motoru - SFTP/FTP, macOS menü çubuğu uygulamasının sidecar süreci",
+  "description": "UpSync senkron motoru - SFTP/FTP, macOS men\u00fc \u00e7ubu\u011fu uygulamas\u0131n\u0131n sidecar s\u00fcreci",
   "main": "dist/engine.js",
   "scripts": {
     "build": "node build.mjs",
     "watch": "node build.mjs --watch",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test --test-concurrency=1 test/*.test.mjs"
   },
   "dependencies": {
     "chokidar": "^3.6.0",

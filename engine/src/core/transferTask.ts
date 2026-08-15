@@ -174,23 +174,32 @@ export default class TransferTask implements Task {
       if (useTempFile) {
         logger.info("uploading temp file: " + uploadTarget);
       }
+      // mode bilerek put'a geçirilmiyor: put onu ayrı bir fchmod ile
+      // uyguluyordu, ardından futimes ikinci bir çağrı yapıyordu. İkisi
+      // aşağıda tek setAttributes çağrısında birleşiyor (SFTP'de tek
+      // FSETSTAT paketi).
       await targetFs.put(this._handle, uploadTarget, {
-        mode,
         fd: uploadFd,
         autoClose: false,
       });
+
+      const attrs: { mode?: number; atime?: number; mtime?: number } = {};
+      if (mode !== undefined) {
+        attrs.mode = mode;
+      }
       if (atime && mtime) {
+        attrs.atime = Math.floor(atime / 1000);
+        attrs.mtime = Math.floor(mtime / 1000);
+      }
+
+      if (attrs.mode !== undefined || attrs.mtime !== undefined) {
         try {
-          await targetFs.futimes(
-            uploadFd,
-            Math.floor(atime / 1000),
-            Math.floor(mtime / 1000)
-          );
+          await targetFs.setAttributes(uploadFd, attrs);
         } catch (error) {
           if (!hasWarnedModifedTimePermission) {
             hasWarnedModifedTimePermission = true;
             logger.warn(
-              `Can't set modified time to the file because ${error.message}`
+              `Can't set mode/modified time on the file because ${error.message}`
             );
           }
         }

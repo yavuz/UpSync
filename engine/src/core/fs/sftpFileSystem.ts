@@ -141,6 +141,58 @@ export default class SFTPFileSystem extends RemoteFileSystem {
     });
   }
 
+  /// İzin ve zaman damgasını tek FSETSTAT paketinde gönderir.
+  /// Ayrı fchmod + futimes iki gidiş-dönüş demekti; uzak sunucuda
+  /// dosya başına 6 protokol çağrısının 2'si buydu.
+  async setAttributes(
+    fd: SFTPFileDescriptor,
+    attrs: { mode?: number; atime?: number; mtime?: number }
+  ): Promise<void> {
+    const payload: any = {};
+    if (attrs.mode !== undefined) {
+      payload.mode = attrs.mode;
+    }
+    if (attrs.atime !== undefined && attrs.mtime !== undefined) {
+      payload.atime = attrs.atime;
+      payload.mtime = attrs.mtime;
+    }
+    if (Object.keys(payload).length === 0) {
+      return;
+    }
+
+    return new Promise<void>((resolve, reject) => {
+      this.sftp.fsetstat(fd.handle, payload, err => {
+        if (!err) {
+          resolve();
+          return;
+        }
+        // fsetstat'ı handle üzerinde desteklemeyen sunucular var;
+        // fchmod'daki ile aynı geri düşüş.
+        if (payload.mode === undefined) {
+          reject(err);
+          return;
+        }
+        this.sftp.chmod(fd.path, payload.mode, chmodErr => {
+          if (chmodErr) {
+            reject(chmodErr);
+            return;
+          }
+          if (payload.mtime === undefined) {
+            resolve();
+            return;
+          }
+          this.sftp.utimes(fd.path, payload.atime, payload.mtime, utimesErr => {
+            if (utimesErr) {
+              reject(utimesErr);
+              return;
+            }
+            resolve();
+          });
+        });
+      });
+    });
+  }
+
   fchmod(fd: SFTPFileDescriptor, mode: number): Promise<void> {
     return new Promise((resolve, reject) => {
       this.sftp.fchmod(fd.handle, mode, err => {
