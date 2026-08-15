@@ -13,6 +13,14 @@ struct PanelView: View {
       content(now: context.date)
     }
     .frame(width: Metrics.panelWidth)
+    // .window stilindeki MenuBarExtra pencereyi kök view'ın "ideal"
+    // boyutuna göre açar. İçerideki ScrollView'in kesin bir ideal
+    // yüksekliği yok (esnek olmak istiyor), bu yüzden fixedSize
+    // olmadan pencere başlık + alt çubuğa sığacak kadar küçülüp
+    // klasör kartlarını hiç göstermiyordu. folderList'teki
+    // .frame(maxHeight: Metrics.panelMaxHeight) üst sınırı korunuyor;
+    // bu sadece gerçek içerik boyutunun pencereye yansımasını sağlıyor.
+    .fixedSize(horizontal: false, vertical: true)
   }
 
   private func content(now: Date) -> some View {
