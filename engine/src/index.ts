@@ -143,14 +143,30 @@ rpc.on('shutdown', async () => {
 // Ebeveyn (uygulama) çökerse ya da zorla kapatılırsa stdin kapanır.
 // Bunu dinlemezsek motor yetim kalıp klasörleri izlemeye ve dosya
 // yüklemeye devam ediyor - görünmez bir ikinci yükleyici.
+let shuttingDown = false;
+
 async function shutdownAndExit(reason: string) {
+  if (shuttingDown) {
+    return;
+  }
+  shuttingDown = true;
   process.stderr.write(`shutting down: ${reason}\n`);
-  for (const folder of folders.values()) {
-    try {
-      await folder.dispose();
-    } catch {
-      /* kapanışta hatayı yut */
-    }
+
+  // Sert son tarih. Temizlik ölü bir SSH bağlantısını kapatmayı beklerken
+  // asılı kalabiliyor; o zaman süreç hiç kapanmıyor ve arkada görünmez bir
+  // yükleyici olarak yaşamaya devam ediyor. Ne olursa olsun çıkıyoruz.
+  setTimeout(() => process.exit(0), 2000);
+
+  try {
+    await Promise.all(
+      Array.from(folders.values()).map(folder =>
+        folder.dispose().catch(() => {
+          /* kapanışta hatayı yut */
+        })
+      )
+    );
+  } catch {
+    /* yut */
   }
   folders.clear();
   process.exit(0);
@@ -162,6 +178,22 @@ process.stdin.on('end', () => {
 process.stdin.on('close', () => {
   void shutdownAndExit('stdin closed (parent gone)');
 });
+
+// stdin EOF'una tek başına güvenilemiyor. Swift tarafı motoru Foundation
+// Process ile başlatıyor ve boru uçlarının miras alınma biçimi yüzünden
+// ebeveyn SIGKILL ile öldüğünde stdin kapanmayabiliyor - motor arkada
+// görünmez bir yükleyici olarak kalıyor.
+//
+// Ebeveyn ölünce süreç launchd'ye (pid 1) devredilir; bunu yoklamak
+// güvenilir ve ucuz.
+const initialParent = process.ppid;
+const parentWatch = setInterval(() => {
+  if (process.ppid !== initialParent || process.ppid === 1) {
+    clearInterval(parentWatch);
+    void shutdownAndExit(`parent gone (ppid ${initialParent} → ${process.ppid})`);
+  }
+}, 2000);
+parentWatch.unref();
 process.on('SIGTERM', () => void shutdownAndExit('SIGTERM'));
 process.on('SIGHUP', () => void shutdownAndExit('SIGHUP'));
 

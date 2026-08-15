@@ -238,6 +238,28 @@ kapatıp tek kopya açın. (0.2.0'dan itibaren motor ebeveyniyle birlikte
 kapandığı için bunun olmaması gerekir.)
 </details>
 
+## Nasıl çalışıyor
+
+UpSync iki süreçten oluşur: menü çubuğu uygulaması ve onun başlattığı bir Node
+motoru. Dosyaları izleyen ve SFTP konuşan taraf motor — uygulama açılınca
+başlayan tek bir örnek.
+
+Uygulamayı kapatmak (**Quit**, ⌘Q) motoru da kapatır, saniyenin altında. Zorla
+kapatma ya da çökme durumunda motor ebeveyninin gittiğini fark edip ~2 saniye
+içinde kendini kapatır. Uygulamayı tekrar açmak yeni bir süreç yaratmaz,
+çalışan tek örneği kullanır; yani motorlar birikmez.
+
+Paketlenmiş uygulamada doğrulandı:
+
+| | motor durumu |
+|---|---|
+| Quit / ⌘Q | ~0.5 sn içinde kapandı |
+| SIGTERM | ~2 sn |
+| Zorla kapatma (SIGKILL) | ~2 sn |
+| aç → kapat, ×3 | artık kalmadı |
+
+Boşta maliyet: tek Node süreci, ~38 MB, %0 CPU.
+
 ## Kaputun altında
 
     ┌─────────────────────────────┐

@@ -233,6 +233,29 @@ launch one. (Since 0.2.0 the engine shuts down with its parent, so this should
 no longer happen.)
 </details>
 
+## How it runs
+
+UpSync is two processes: the menu bar app and a Node engine it spawns as a
+child. The engine is what watches files and talks SFTP — one instance, started
+when the app launches.
+
+Quitting the app (**Quit**, ⌘Q) shuts the engine down with it, in well under a
+second. If the app is force-quit or crashes, the engine notices its parent is
+gone and exits within ~2 seconds. Launching the app again reuses the single
+running instance rather than starting a second one, so engines never
+accumulate.
+
+Verified on the packaged app:
+
+| | engine after |
+|---|---|
+| Quit / ⌘Q | gone in ~0.5 s |
+| SIGTERM | gone in ~2 s |
+| Force quit (SIGKILL) | gone in ~2 s |
+| open → quit, ×3 | none left over |
+
+Idle cost is one Node process at ~38 MB and 0% CPU.
+
 ## Under the hood
 
     ┌─────────────────────────────┐
