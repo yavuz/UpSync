@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { FileService, ServiceConfig } from './core';
+import { FileService, ServiceConfig, TransferDirection, TransferTask } from './core';
 import { findConfigPath, readConfigs, validateConfig, ConfigError } from './config';
 import { FolderWatcher, ChangeKind } from './watcher';
 import * as ops from './operations';
@@ -47,6 +47,8 @@ export class Folder {
   // Aynı dosya için üst üste gelen olayları teke indirir.
   private inFlight = new Map<string, Promise<void>>();
   private queuedAgain = new Set<string>();
+  // Görev başlangıç zamanları, süre ölçümü için.
+  private transferStarted = new Map<TransferTask, number>();
 
   constructor(init: FolderInit, private readonly emit: (e: FolderEvent) => void) {
     this.id = init.id;
@@ -100,6 +102,57 @@ export class Folder {
       this.service = new FileService(this.baseDir, this.workspace, raw);
       this.service.name = raw.name;
       this.service.setConfigValidator(validateConfig);
+
+      // Dosya başına transfer olayları buradan gelir. Scheduler bu kancaları
+      // izleyici kaynaklı yüklemeler için de manuel upload/download/sync için
+      // de tetikler; tek kaynak burası olsun ki manuel bir klasör senkronu
+      // sessiz kalmasın.
+      this.service.beforeTransfer(task => {
+        try {
+        this.transferStarted.set(task as TransferTask, Date.now());
+        this.emit({
+          type: 'transfer',
+          phase: 'start',
+          folderId: this.id,
+          localPath: (task as TransferTask).localFsPath,
+          kind: directionToKind((task as TransferTask).transferType),
+        });
+        } catch (error) {
+          logger.warn('beforeTransfer raporlaması başarısız', error);
+        }
+      });
+
+      this.service.afterTransfer((error, task) => {
+        try {
+        const t = task as TransferTask;
+        const startedAt = this.transferStarted.get(t) ?? Date.now();
+        this.transferStarted.delete(t);
+        const kind = directionToKind(t.transferType);
+
+        if (error) {
+          logger.error(`${kind} failed for ${t.localFsPath}`, error);
+          this.emit({
+            type: 'transfer',
+            phase: 'error',
+            folderId: this.id,
+            localPath: t.localFsPath,
+            kind,
+            message: (error as Error).message ?? String(error),
+          });
+        } else {
+          this.emit({
+            type: 'transfer',
+            phase: 'done',
+            folderId: this.id,
+            localPath: t.localFsPath,
+            kind,
+            ms: Date.now() - startedAt,
+          });
+        }
+        } catch (reportError) {
+          logger.warn('afterTransfer raporlaması başarısız', reportError);
+        }
+      });
 
       if (this.profile === null && raw.defaultProfile) {
         this.profile = raw.defaultProfile;
@@ -226,19 +279,28 @@ export class Folder {
     }
 
     const started = Date.now();
-    this.emit({ type: 'transfer', phase: 'start', folderId: this.id, localPath: fsPath, kind });
+    // Silme işlemi scheduler'dan geçmez (TransferTask üretmez), o yüzden
+    // olayını burada yayıyoruz. Yüklemelerin olayları beforeTransfer /
+    // afterTransfer kancalarından gelir; burada tekrar yaymıyoruz.
+    const emitsOwnEvents = kind === 'delete';
+
+    if (emitsOwnEvents) {
+      this.emit({ type: 'transfer', phase: 'start', folderId: this.id, localPath: fsPath, kind });
+    }
 
     const task = (async () => {
       try {
         await run();
-        this.emit({
-          type: 'transfer',
-          phase: 'done',
-          folderId: this.id,
-          localPath: fsPath,
-          kind,
-          ms: Date.now() - started,
-        });
+        if (emitsOwnEvents) {
+          this.emit({
+            type: 'transfer',
+            phase: 'done',
+            folderId: this.id,
+            localPath: fsPath,
+            kind,
+            ms: Date.now() - started,
+          });
+        }
       } catch (error) {
         const message = (error as Error).message ?? String(error);
         logger.error(`${kind} failed for ${fsPath}`, error);
@@ -303,4 +365,9 @@ function isAutoUpload(config: any): boolean {
 
 function isAutoDelete(config: any): boolean {
   return config?.watcher?.autoDelete === true;
+}
+
+// Scheduler yön bilgisi taşır; arayüz 'upload' / 'download' bekliyor.
+function directionToKind(direction: TransferDirection): string {
+  return direction === TransferDirection.REMOTE_TO_LOCAL ? 'download' : 'upload';
 }
