@@ -217,6 +217,21 @@ yapılmadı.
 - Girişte otomatik başlatma henüz yok — Sistem Ayarları > Giriş Öğeleri'nden
   elle eklenebilir.
 
+## Sürüm yayınlama
+
+Sürüm numarasının tek kaynağı `VERSION` dosyasıdır; `build.sh` onu okur ve
+`Info.plist`'e yazar.
+
+    ./release.sh 0.2.0
+
+Script sırayla: testleri koşar, sürümü yazıp commit eder, `.app`'i derler,
+paketteki sürümü doğrular, `ditto` ile zip'ler (imzayı bozmadan), `vX.Y.Z`
+etiketi atar, main ve etiketi push eder, GitHub Releases'e kurulum notlarıyla
+birlikte yükler.
+
+Ön koşul olarak çalışma dizininin temiz olmasını ve `gh` oturumunu şart koşar;
+etiket zaten varsa durur.
+
 ## Lisans
 
 MIT. Bkz. [LICENSE](LICENSE).
