@@ -15,11 +15,11 @@ final class EngineClient: @unchecked Sendable {
     var errorDescription: String? {
       switch self {
       case .nodeNotFound:
-        return "Node.js bulunamadı. Node 18 veya üzeri gerekiyor."
+        return "Node.js not found. Node 18 or later is required."
       case .engineNotFound(let path):
-        return "Motor dosyası bulunamadı: \(path)"
+        return "Engine file not found: \(path)"
       case .notRunning:
-        return "Motor çalışmıyor."
+        return "The engine is not running."
       case .remote(let message):
         return message
       }
@@ -117,7 +117,7 @@ final class EngineClient: @unchecked Sendable {
 
     limits.rlim_cur = hard
     if setrlimit(RLIMIT_NOFILE, &limits) != 0 {
-      FileHandle.standardError.write(Data("fd limiti yükseltilemedi\n".utf8))
+      FileHandle.standardError.write(Data("could not raise the file descriptor limit\n".utf8))
     }
   }
 
@@ -209,7 +209,7 @@ final class EngineClient: @unchecked Sendable {
     if let id = object["id"] as? Int {
       guard let continuation = pending.removeValue(forKey: id) else { return }
       if let error = object["error"] as? [String: Any] {
-        let message = error["message"] as? String ?? "Bilinmeyen motor hatası"
+        let message = error["message"] as? String ?? "Unknown engine error"
         continuation.resume(throwing: EngineError.remote(message))
       } else {
         continuation.resume(returning: object["result"])

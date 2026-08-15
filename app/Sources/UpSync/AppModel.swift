@@ -21,11 +21,11 @@ final class AppModel: ObservableObject {
     folders = FolderStore.load()
 
     guard let nodePath = NodeLocator.find() else {
-      startupError = "Node.js bulunamadı. Node 18+ kurulu olmalı (brew install node)."
+      startupError = "Node.js not found. Node 18+ must be installed (brew install node)."
       return
     }
     guard let enginePath = NodeLocator.engineScript() else {
-      startupError = "Motor dosyası (engine.js) bulunamadı. `npm run build` çalıştırın."
+      startupError = "Engine file (engine.js) not found. Run `npm run build`."
       return
     }
 
@@ -123,17 +123,17 @@ final class AppModel: ObservableObject {
   // MARK: - Manuel işlemler
 
   func uploadFolder(_ folder: WatchedFolder) {
-    run("upload", folder: folder, path: folder.path, label: "Yükleme")
+    run("upload", folder: folder, path: folder.path, label: "Upload")
   }
 
   func downloadFolder(_ folder: WatchedFolder) {
-    run("download", folder: folder, path: folder.path, label: "İndirme")
+    run("download", folder: folder, path: folder.path, label: "Download")
   }
 
   func sync(_ folder: WatchedFolder, direction: String, delete: Bool = false) {
-    let label = "Senkron (\(direction))"
+    let label = "Sync (\(direction))"
     Task {
-      log(.info, path: folder.path, detail: "\(label) başladı", folderId: folder.id)
+      log(.info, path: folder.path, detail: "\(label) started", folderId: folder.id)
       do {
         _ = try await engine?.call("sync", [
           "id": folder.id,
@@ -141,7 +141,7 @@ final class AppModel: ObservableObject {
           "direction": direction,
           "options": ["delete": delete],
         ])
-        log(.info, path: folder.path, detail: "\(label) bitti", folderId: folder.id)
+        log(.info, path: folder.path, detail: "\(label) finished", folderId: folder.id)
       } catch {
         log(.failed, path: folder.path, detail: error.localizedDescription, folderId: folder.id)
       }
@@ -156,7 +156,7 @@ final class AppModel: ObservableObject {
     for account in Keychain.accounts(matchingHost: host) {
       Keychain.removePassword(for: account)
     }
-    log(.info, path: folder.path, detail: "Kayıtlı şifre silindi", folderId: folder.id)
+    log(.info, path: folder.path, detail: "Saved password cleared", folderId: folder.id)
     reload(folder)
   }
 
@@ -166,10 +166,10 @@ final class AppModel: ObservableObject {
 
   private func run(_ method: String, folder: WatchedFolder, path: String, label: String) {
     Task {
-      log(.info, path: path, detail: "\(label) başladı", folderId: folder.id)
+      log(.info, path: path, detail: "\(label) started", folderId: folder.id)
       do {
         _ = try await engine?.call(method, ["id": folder.id, "path": path])
-        log(.info, path: path, detail: "\(label) bitti", folderId: folder.id)
+        log(.info, path: path, detail: "\(label) finished", folderId: folder.id)
       } catch {
         log(.failed, path: path, detail: error.localizedDescription, folderId: folder.id)
       }
@@ -198,7 +198,7 @@ final class AppModel: ObservableObject {
       }
     case "password:request":
       if let id = params["requestId"] as? Int {
-        let message = params["prompt"] as? String ?? "Şifre gerekiyor"
+        let message = params["prompt"] as? String ?? "Password required"
         let account = params["account"] as? String
 
         // Önce Keychain: kayıtlıysa kullanıcıya hiç sorma.

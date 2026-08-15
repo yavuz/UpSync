@@ -81,7 +81,7 @@ export class Folder {
 
     const configPath = this.configPath ?? findConfigPath(this.workspace);
     if (!configPath) {
-      this.lastError = `Config bulunamadı: ${this.workspace} içinde .zed/sftp.json, .vscode/sftp.json veya sftp.json yok.`;
+      this.lastError = `No config found: ${this.workspace} contains no .zed/sftp.json, .vscode/sftp.json or sftp.json.`;
       this.emit({ type: 'config', folderId: this.id, ok: false, message: this.lastError });
       return;
     }
@@ -91,7 +91,7 @@ export class Folder {
       // Çoklu config dizisinde ilki kullanılır; ek sunucular profiles ile tanımlanır.
       const configs = readConfigs(configPath);
       if (!configs.length) {
-        throw new ConfigError('Config dosyasında sunucu tanımı yok.', configPath);
+        throw new ConfigError('The config file defines no server.', configPath);
       }
       const raw = configs[0];
 
@@ -125,7 +125,7 @@ export class Folder {
   // farklı klasörler farklı profillerde olabilir.
   private resolveConfig(): ServiceConfig {
     if (!this.service) {
-      throw new Error(this.lastError ?? 'Config yüklenmedi.');
+      throw new Error(this.lastError ?? 'Config not loaded.');
     }
     return this.service.getConfig(this.profile ?? undefined);
   }
@@ -206,7 +206,7 @@ export class Folder {
           type: 'skipped',
           folderId: this.id,
           localPath: fsPath,
-          reason: 'autoDelete kapalı',
+          reason: 'autoDelete is off',
         });
         return;
       }

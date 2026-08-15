@@ -134,13 +134,13 @@ export function readConfigs(configPath: string): any[] {
     const first = errors[0];
     const line = raw.slice(0, first.offset).split('\n').length;
     throw new ConfigError(
-      `JSON hatası (satır ${line}): ${printParseErrorCode(first.error)}`,
+      `JSON error on line ${line}: ${printParseErrorCode(first.error)}`,
       configPath
     );
   }
 
   if (parsed === undefined) {
-    throw new ConfigError('Config dosyası boş.', configPath);
+    throw new ConfigError('The config file is empty.', configPath);
   }
 
   const configs = Array.isArray(parsed) ? parsed : [parsed];

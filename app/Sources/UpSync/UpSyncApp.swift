@@ -11,7 +11,7 @@ struct UpSyncApp: App {
         .environmentObject(delegate.model)
     }
 
-    Window("UpSync Etkinliği", id: "activity") {
+    Window("UpSync Activity", id: "activity") {
       ActivityView()
         .environmentObject(delegate.model)
     }
@@ -52,14 +52,14 @@ enum PasswordPrompt {
     completion: @escaping (String?, Bool) -> Void
   ) {
     let alert = NSAlert()
-    alert.messageText = "UpSync: şifre gerekiyor"
-    alert.informativeText = account.map { "\(message)\n\nHesap: \($0)" } ?? message
-    alert.addButton(withTitle: "Bağlan")
-    alert.addButton(withTitle: "Vazgeç")
+    alert.messageText = "UpSync needs a password"
+    alert.informativeText = account.map { "\(message)\n\nAccount: \($0)" } ?? message
+    alert.addButton(withTitle: "Connect")
+    alert.addButton(withTitle: "Cancel")
 
     let container = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 54))
     let field = NSSecureTextField(frame: NSRect(x: 0, y: 30, width: 300, height: 24))
-    let remember = NSButton(checkboxWithTitle: "Keychain'e kaydet", target: nil, action: nil)
+    let remember = NSButton(checkboxWithTitle: "Save to Keychain", target: nil, action: nil)
     remember.frame = NSRect(x: 0, y: 2, width: 300, height: 20)
     remember.state = account == nil ? .off : .on
     remember.isEnabled = account != nil

@@ -11,13 +11,13 @@ struct ActivityView: View {
   var body: some View {
     VStack(spacing: 0) {
       HStack {
-        Toggle("Sadece hatalar", isOn: $onlyFailures)
+        Toggle("Errors only", isOn: $onlyFailures)
           .toggleStyle(.checkbox)
         Spacer()
-        Text(model.engineRunning ? "Motor çalışıyor" : "Motor durdu")
+        Text(model.engineRunning ? "Engine running" : "Engine stopped")
           .foregroundStyle(model.engineRunning ? Color.secondary : Color.red)
           .font(.callout)
-        Button("Temizle") { model.clearActivity() }
+        Button("Clear") { model.clearActivity() }
       }
       .padding(10)
 
@@ -25,9 +25,9 @@ struct ActivityView: View {
 
       if entries.isEmpty {
         ContentUnavailableView(
-          "Henüz etkinlik yok",
+          "No activity yet",
           systemImage: "clock",
-          description: Text("Bir dosya kaydettiğinizde burada görünecek.")
+          description: Text("Saved files will show up here.")
         )
         .frame(maxHeight: .infinity)
       } else {

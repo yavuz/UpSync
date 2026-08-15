@@ -4,8 +4,8 @@ type PasswordResolver = (prompt: string, account?: string) => Promise<string | u
 
 let passwordResolver: PasswordResolver = async prompt => {
   throw new Error(
-    `Şifre gerekiyor ama sorulacak bir arayüz yok: ${prompt}. ` +
-      'Şifreyi Keychain’e kaydedin veya privateKeyPath kullanın.'
+    `A password is required but no UI is available to ask for it: ${prompt}. ` +
+      'Save the password to the Keychain, or use privateKeyPath.'
   );
 };
 

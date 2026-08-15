@@ -49,14 +49,14 @@ export class RpcPeer {
     try {
       request = JSON.parse(line);
     } catch (error) {
-      this.write({ error: { message: `Geçersiz JSON: ${(error as Error).message}` } });
+      this.write({ error: { message: `Invalid JSON: ${(error as Error).message}` } });
       return;
     }
 
     const handler = this.handlers.get(request.method);
     if (!handler) {
       if (request.id !== undefined) {
-        this.write({ id: request.id, error: { message: `Bilinmeyen metot: ${request.method}` } });
+        this.write({ id: request.id, error: { message: `Unknown method: ${request.method}` } });
       }
       return;
     }

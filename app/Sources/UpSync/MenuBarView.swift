@@ -10,12 +10,12 @@ struct MenuBarView: View {
       Text(error)
       Divider()
     } else if !model.engineRunning {
-      Text("Motor başlatılıyor…")
+      Text("Starting engine…")
       Divider()
     }
 
     if model.folders.isEmpty {
-      Text("Henüz klasör eklenmedi")
+      Text("No folders added yet")
     }
 
     ForEach(model.folders) { folder in
@@ -26,14 +26,14 @@ struct MenuBarView: View {
       Divider()
     }
 
-    Button("Klasör Ekle…") { chooseFolder() }
+    Button("Add Folder…") { chooseFolder() }
 
-    Button("Etkinlik…") { openWindow(id: "activity") }
+    Button("Activity…") { openWindow(id: "activity") }
       .badge(model.failureCount)
 
     Divider()
 
-    Button("Çıkış") {
+    Button("Quit") {
       model.stop()
       NSApplication.shared.terminate(nil)
     }
@@ -58,34 +58,34 @@ struct MenuBarView: View {
         Divider()
       }
 
-      Toggle("Kaydedince yükle", isOn: Binding(
+      Toggle("Upload on save", isOn: Binding(
         get: { folder.enabled },
         set: { model.setEnabled(folder, $0) }
       ))
 
       if status?.autoUpload == false {
-        Text("config'te uploadOnSave kapalı")
+        Text("uploadOnSave is off in the config")
       }
 
       Divider()
 
-      Button("Klasörü Yükle") { model.uploadFolder(folder) }
-      Button("Klasörü İndir") { model.downloadFolder(folder) }
+      Button("Upload Folder") { model.uploadFolder(folder) }
+      Button("Download Folder") { model.downloadFolder(folder) }
 
-      Menu("Senkronize Et") {
-        Button("Lokal → Uzak") { model.sync(folder, direction: "localToRemote") }
-        Button("Uzak → Lokal") { model.sync(folder, direction: "remoteToLocal") }
-        Button("Çift Yönlü") { model.sync(folder, direction: "both") }
+      Menu("Sync") {
+        Button("Local → Remote") { model.sync(folder, direction: "localToRemote") }
+        Button("Remote → Local") { model.sync(folder, direction: "remoteToLocal") }
+        Button("Both Directions") { model.sync(folder, direction: "both") }
         Divider()
-        Button("Lokal → Uzak (fazlalıkları sil)") {
+        Button("Local → Remote (delete extraneous)") {
           confirmDestructiveSync(folder)
         }
       }
 
       if let profiles = status?.profiles, !profiles.isEmpty {
         Divider()
-        Menu("Profil: \(folder.profile ?? "varsayılan")") {
-          Button("Varsayılan") { model.setProfile(folder, nil) }
+        Menu("Profile: \(folder.profile ?? "default")") {
+          Button("Default") { model.setProfile(folder, nil) }
           ForEach(profiles, id: \.self) { profile in
             Button(profile) { model.setProfile(folder, profile) }
           }
@@ -93,17 +93,17 @@ struct MenuBarView: View {
       }
 
       Divider()
-      Button("Config'i Yeniden Yükle") { model.reload(folder) }
-      Button("Finder'da Göster") {
+      Button("Reload Config") { model.reload(folder) }
+      Button("Reveal in Finder") {
         NSWorkspace.shared.selectFile(
           status?.configPath,
           inFileViewerRootedAtPath: folder.path
         )
       }
-      Button("Transferleri İptal Et") { model.cancel(folder) }
-      Button("Kayıtlı Şifreyi Unut") { model.forgetPassword(folder) }
+      Button("Cancel Transfers") { model.cancel(folder) }
+      Button("Forget Saved Password") { model.forgetPassword(folder) }
       Divider()
-      Button("Klasörü Kaldır") { model.removeFolder(folder) }
+      Button("Remove Folder") { model.removeFolder(folder) }
     }
   }
 
@@ -127,8 +127,8 @@ struct MenuBarView: View {
     panel.canChooseDirectories = true
     panel.canChooseFiles = false
     panel.allowsMultipleSelection = false
-    panel.prompt = "Ekle"
-    panel.message = "İçinde sftp.json bulunan proje klasörünü seçin"
+    panel.prompt = "Add"
+    panel.message = "Choose a project folder containing an sftp.json"
 
     NSApp.activate(ignoringOtherApps: true)
     if panel.runModal() == .OK, let url = panel.url {
@@ -139,14 +139,14 @@ struct MenuBarView: View {
   // Silmeli senkron geri alınamaz; onaysız çalıştırmıyoruz.
   private func confirmDestructiveSync(_ folder: WatchedFolder) {
     let alert = NSAlert()
-    alert.messageText = "Uzaktaki fazlalıklar silinsin mi?"
+    alert.messageText = "Delete extraneous remote files?"
     alert.informativeText = """
-      \(folder.displayName) klasöründe lokalde bulunmayan uzak dosyalar \
-      kalıcı olarak silinecek. Bu işlem geri alınamaz.
+      Remote files in \(folder.displayName) that do not exist locally will be \
+      permanently deleted. This cannot be undone.
       """
     alert.alertStyle = .warning
-    alert.addButton(withTitle: "Senkronize Et ve Sil")
-    alert.addButton(withTitle: "Vazgeç")
+    alert.addButton(withTitle: "Sync and Delete")
+    alert.addButton(withTitle: "Cancel")
 
     NSApp.activate(ignoringOtherApps: true)
     if alert.runModal() == .alertFirstButtonReturn {

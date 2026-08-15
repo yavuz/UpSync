@@ -53,7 +53,7 @@ function emit(event: FolderEvent) {
 function requireFolder(id: string): Folder {
   const folder = folders.get(id);
   if (!folder) {
-    throw new Error(`Bilinmeyen klasör: ${id}`);
+    throw new Error(`Unknown folder: ${id}`);
   }
   return folder;
 }

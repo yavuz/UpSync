@@ -1,6 +1,6 @@
 #!/bin/bash
-# UpSync sürüm yayınlar: sürümü yükseltir, test eder, derler, paketler,
-# etiketler ve GitHub Releases'e yükler.
+# Publishes an UpSync release: bumps the version, tests, builds, packages,
+# tags, and uploads to GitHub Releases.
 #
 #   ./release.sh 0.2.0
 #
@@ -11,100 +11,100 @@ cd "$ROOT"
 
 VERSION="${1:-}"
 if [ -z "$VERSION" ]; then
-  echo "Kullanım: ./release.sh <sürüm>   (örn. 0.2.0)" >&2
+  echo "Usage: ./release.sh <version>   (e.g. 0.2.0)" >&2
   exit 1
 fi
 if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "HATA: sürüm X.Y.Z biçiminde olmalı (verilen: $VERSION)" >&2
+  echo "ERROR: version must look like X.Y.Z (got: $VERSION)" >&2
   exit 1
 fi
 
 TAG="v$VERSION"
 
-# --- Ön koşullar -----------------------------------------------------------
+# --- Preconditions ---------------------------------------------------------
 
-command -v gh >/dev/null || { echo "HATA: gh CLI kurulu değil." >&2; exit 1; }
-gh auth status >/dev/null 2>&1 || { echo "HATA: gh oturumu yok ('gh auth login')." >&2; exit 1; }
+command -v gh >/dev/null || { echo "ERROR: gh CLI is not installed." >&2; exit 1; }
+gh auth status >/dev/null 2>&1 || { echo "ERROR: not logged in to gh ('gh auth login')." >&2; exit 1; }
 
 if [ -n "$(git status --porcelain)" ]; then
-  echo "HATA: çalışma dizini temiz değil. Önce commit edin:" >&2
+  echo "ERROR: working tree is not clean. Commit first:" >&2
   git status --short >&2
   exit 1
 fi
 
 if git rev-parse "$TAG" >/dev/null 2>&1; then
-  echo "HATA: $TAG etiketi zaten var." >&2
+  echo "ERROR: tag $TAG already exists." >&2
   exit 1
 fi
 
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 if [ "$BRANCH" != "main" ]; then
-  echo "UYARI: main dalında değilsiniz ($BRANCH)."
-  read -r -p "Devam edilsin mi? [e/H] " answer
-  [ "$answer" = "e" ] || exit 1
+  echo "WARNING: you are not on main (current: $BRANCH)."
+  read -r -p "Continue? [y/N] " answer
+  [ "$answer" = "y" ] || exit 1
 fi
 
-# --- Testler ---------------------------------------------------------------
+# --- Tests -----------------------------------------------------------------
 
-echo "==> Testler"
+echo "==> Tests"
 (cd engine && npm test)
 
-# --- Sürümü yaz ve derle ---------------------------------------------------
+# --- Write version and build -----------------------------------------------
 
-echo "==> Sürüm $VERSION"
+echo "==> Version $VERSION"
 echo "$VERSION" > VERSION
 git add VERSION
-git commit -q -m "Sürüm $VERSION"
+git commit -q -m "Release $VERSION"
 
 ./build.sh release
 
-# Info.plist gerçekten istenen sürümü taşıyor mu.
+# Make sure the bundle really carries the version we asked for.
 BUILT="$(plutil -extract CFBundleShortVersionString raw "build/UpSync.app/Contents/Info.plist")"
 if [ "$BUILT" != "$VERSION" ]; then
-  echo "HATA: paketteki sürüm ($BUILT) beklenenle ($VERSION) uyuşmuyor." >&2
+  echo "ERROR: bundle version ($BUILT) does not match expected ($VERSION)." >&2
   exit 1
 fi
 
-# --- Paketle ---------------------------------------------------------------
+# --- Package ---------------------------------------------------------------
 
-echo "==> Paketleniyor"
+echo "==> Packaging"
 ZIP="$ROOT/build/UpSync-$VERSION.zip"
 rm -f "$ZIP"
-# ditto: imzayı ve paket yapısını bozmadan sıkıştırır. 'zip' bunu yapamaz.
+# ditto preserves the code signature and bundle structure; plain `zip` does not.
 ditto -c -k --keepParent "build/UpSync.app" "$ZIP"
 
-# --- Etiketle ve yayınla ---------------------------------------------------
+# --- Tag and publish -------------------------------------------------------
 
-echo "==> Etiket $TAG"
+echo "==> Tagging $TAG"
 git tag -a "$TAG" -m "UpSync $VERSION"
 git push origin main
 git push origin "$TAG"
 
 NOTES="$(mktemp)"
 cat > "$NOTES" <<NOTE
-## Kurulum
+## Install
 
-1. \`UpSync-$VERSION.zip\` dosyasını indirin ve açın
-2. \`UpSync.app\`'i **Applications** klasörüne taşıyın
-3. İlk açılışta macOS uyarabilir (uygulama ad-hoc imzalı, Apple Developer
-   sertifikasıyla notarize edilmemiş). Sağ tık → **Aç** deyin, ya da:
+1. Download and unzip \`UpSync-$VERSION.zip\`
+2. Move \`UpSync.app\` to your **Applications** folder
+3. macOS may warn on first launch — the app is ad-hoc signed, not notarized
+   with an Apple Developer certificate. Right-click → **Open**, or run:
 
    \`\`\`bash
    xattr -dr com.apple.quarantine /Applications/UpSync.app
    \`\`\`
 
-## Gereksinim
+## Requirements
 
-Node.js 18+ sistemde kurulu olmalı. UpSync onu şu sırayla arar:
-paket içi → \`/opt/homebrew/bin\` → \`/usr/local/bin\` → \`/usr/bin\` →
-giriş kabuğunun PATH'i (nvm, Herd vb.).
+Node.js 18+ must be installed. UpSync looks for it in this order:
+bundled → \`/opt/homebrew/bin\` → \`/usr/local/bin\` → \`/usr/bin\` →
+your login shell's PATH (nvm, Herd, etc.).
 NOTE
 
-echo "==> GitHub Releases"
+echo "==> Publishing to GitHub Releases"
 gh release create "$TAG" "$ZIP" \
   --title "UpSync $VERSION" \
   --notes-file "$NOTES" \
   --verify-tag
 rm -f "$NOTES"
 
-echo "==> Yayınlandı: $(gh release view "$TAG" --json url --jq .url)"
+echo "==> Published: $(gh release view "$TAG" --json url --jq .url)"
