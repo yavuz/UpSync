@@ -34,6 +34,8 @@ fi
 
 if git rev-parse "$TAG" >/dev/null 2>&1; then
   echo "ERROR: tag $TAG already exists." >&2
+  echo "       Bump the version, or delete the tag with:" >&2
+  echo "         git tag -d $TAG && git push --delete origin $TAG" >&2
   exit 1
 fi
 
@@ -53,8 +55,14 @@ echo "==> Tests"
 
 echo "==> Version $VERSION"
 echo "$VERSION" > VERSION
-git add VERSION
-git commit -q -m "Release $VERSION"
+# VERSION may already hold this value (typically on the very first release),
+# in which case there is nothing to commit and `git commit` would abort.
+if [ -n "$(git status --porcelain -- VERSION)" ]; then
+  git add VERSION
+  git commit -q -m "Release $VERSION"
+else
+  echo "    VERSION already at $VERSION, nothing to commit"
+fi
 
 ./build.sh release
 
