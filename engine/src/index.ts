@@ -140,6 +140,31 @@ rpc.on('shutdown', async () => {
   return null;
 });
 
+// Ebeveyn (uygulama) çökerse ya da zorla kapatılırsa stdin kapanır.
+// Bunu dinlemezsek motor yetim kalıp klasörleri izlemeye ve dosya
+// yüklemeye devam ediyor - görünmez bir ikinci yükleyici.
+async function shutdownAndExit(reason: string) {
+  process.stderr.write(`shutting down: ${reason}\n`);
+  for (const folder of folders.values()) {
+    try {
+      await folder.dispose();
+    } catch {
+      /* kapanışta hatayı yut */
+    }
+  }
+  folders.clear();
+  process.exit(0);
+}
+
+process.stdin.on('end', () => {
+  void shutdownAndExit('stdin closed (parent gone)');
+});
+process.stdin.on('close', () => {
+  void shutdownAndExit('stdin closed (parent gone)');
+});
+process.on('SIGTERM', () => void shutdownAndExit('SIGTERM'));
+process.on('SIGHUP', () => void shutdownAndExit('SIGHUP'));
+
 process.on('uncaughtException', error => {
   rpc.notify('log', { level: 'critical', message: `uncaught: ${error.stack ?? error.message}` });
 });
