@@ -28,6 +28,13 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/engine"
 cp "$BINARY" "$APP/Contents/MacOS/$APP_NAME"
 cp "$ROOT/engine/dist/engine.js" "$APP/Contents/Resources/engine/engine.js"
 
+# Uygulama ikonu. Yoksa üret - ikon programatik çizildiği için kaynaktan
+# her zaman yeniden oluşturulabilir.
+if [ ! -f "$ROOT/icon/UpSync.icns" ]; then
+  "$ROOT/icon/make-icns.sh"
+fi
+cp "$ROOT/icon/UpSync.icns" "$APP/Contents/Resources/UpSync.icns"
+
 # fsevents native modül olduğu için bundle'a giremez, yanında taşınmalı.
 # Onsuz chokidar dosya başına fs.watch açar ve uygulama launchd'den devraldığı
 # 256 fd limitinde EMFILE alır.
@@ -49,6 +56,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleDisplayName</key><string>UpSync</string>
   <key>CFBundleIdentifier</key><string>dev.upsync.app</string>
   <key>CFBundleExecutable</key><string>$APP_NAME</string>
+  <key>CFBundleIconFile</key><string>UpSync</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$VERSION</string>

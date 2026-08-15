@@ -218,6 +218,23 @@ would remove the need to ship the `fsevents` native module. But FSEvents fires
 when a write *starts*, so chokidar's `awaitWriteFinish` behavior — not
 uploading a half-written file — would have to be reimplemented. Not done yet.
 
+## App icon
+
+The icon is drawn programmatically (`icon/render.swift`, CoreGraphics) rather
+than shipped as a binary asset, so every size is regenerated from one source:
+
+    ./icon/make-icns.sh
+
+`build.sh` generates `icon/UpSync.icns` automatically if it is missing.
+
+The artwork is deliberately **full-bleed** — no rounded rectangle is drawn.
+macOS 26 places legacy `.icns` icons on its own standard tile, so drawing our
+own squircle produced a doubled frame (our shape inside a grey system tile).
+Supplying edge-to-edge art lets the system apply its own mask and edge
+lighting. The trade-off: on macOS 15 and earlier the icon renders as a plain
+square with no corner rounding. The proper fix is to add an Icon Composer
+(`.icon`) asset alongside the `.icns`.
+
 ## Known limitations
 
 - Node.js must be installed on the system; it is not currently bundled (the
