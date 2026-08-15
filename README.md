@@ -1,57 +1,61 @@
 # UpSync
 
-**Kaydet, yüklensin.** macOS menü çubuğu uygulaması: tanımladığınız klasörleri
-izler, kaydedilen dosyayı SFTP veya FTP ile uzak sunucuya yükler. Editörden bağımsız çalışır — Zed, VS Code,
-PhpStorm, `vim`, hatta `sed` fark etmez.
+***English** · [Türkçe](README.tr.md)*
 
-## Neden
+**Save it, ship it.** A macOS menu bar app that watches the folders you point
+it at and uploads each saved file to a remote server over SFTP or FTP. It is
+editor-independent — Zed, VS Code, PhpStorm, `vim`, even `sed` all work,
+because the watching happens at the OS level.
 
-Zed'in eklenti API'si panel, komut ve dosya izleyici sunmuyor. Mevcut Zed SFTP
-eklentisi bunu dil sunucusu (LSP) numarasıyla dolanıyor, ama o zaman yükleme
-Zed'in dosyaya hangi dili atadığına bağlı kalıyor. Bu uygulama o bağı tamamen
-koparıyor: izleme işletim sistemi seviyesinde.
+## Why
 
-## Mimari
+Zed's extension API offers no panels, no commands, and no file watchers. The
+existing Zed SFTP extension works around this with a language-server trick,
+but then uploads depend on which language Zed assigns to a file — save a
+`.tpl` or `.sql` and nothing happens. UpSync cuts that dependency entirely.
+
+## Architecture
 
     ┌─────────────────────────────┐
-    │  SwiftUI menü çubuğu (app/) │  MenuBarExtra, etkinlik penceresi,
-    │                             │  Keychain, klasör yönetimi
+    │  SwiftUI menu bar (app/)    │  MenuBarExtra, activity window,
+    │                             │  Keychain, folder management
     └───────────┬─────────────────┘
-                │ stdin/stdout, satır ayraçlı JSON-RPC
+                │ stdin/stdout, newline-delimited JSON-RPC
     ┌───────────▼─────────────────┐
-    │  Node motoru (engine/)      │  chokidar, ssh2 (SFTP), ftp (FTP/FTPS),
-    │  esbuild → tek dosya        │  transfer/sync algoritması, ignore, profiller
+    │  Node engine (engine/)      │  chokidar, ssh2 (SFTP), ftp (FTP/FTPS),
+    │  esbuild → single file      │  transfer/sync algorithm, ignore, profiles
     └─────────────────────────────┘
 
-Motor, [vscode-sftp](https://github.com/Natizyskunk/vscode-sftp)'nin transfer
-çekirdeğinden portlandı: `core/fs`, `core/remote-client`, `scheduler`,
-`transferTask`, `ignore`, `fileService` ve `fileHandlers/transfer`. vscode'a
-bağımlı olan her şey `src/shims/` altındaki karşılıklarıyla değiştirildi.
+The engine is ported from [vscode-sftp](https://github.com/Natizyskunk/vscode-sftp)'s
+transfer core: `core/fs`, `core/remote-client`, `scheduler`, `transferTask`,
+`ignore`, `fileService`, and `fileHandlers/transfer`. Everything that depended
+on the vscode API was replaced with equivalents under `engine/src/shims/`.
 
-Swift tarafı motoru çocuk süreç olarak başlatır ve süreç ölürse üstel geri
-çekilmeyle yeniden başlatır.
+The Swift side spawns the engine as a child process and restarts it with
+exponential backoff if it dies.
 
-## Kurulum
+## Install
 
-Gereksinim: Node.js 18+ (motor için), Xcode 15+ / Swift 6 (derlemek için).
+Requirements: Node.js 18+ (for the engine), Xcode 15+ / Swift 6 (to build).
 
     ./build.sh
 
-`build/UpSync.app` üretilir. Applications klasörüne kopyalayabilirsiniz.
+This produces `build/UpSync.app`, which you can copy to Applications.
+Prebuilt releases are on the [Releases page](https://github.com/yavuz/UpSync/releases).
 
-Uygulama sistemdeki Node'u arar: paket içi → `/opt/homebrew/bin` →
-`/usr/local/bin` → `/usr/bin` → giriş kabuğunun PATH'i (nvm, Herd vb. için).
+The app locates Node in this order: bundled → `/opt/homebrew/bin` →
+`/usr/local/bin` → `/usr/bin` → your login shell's PATH (for nvm, Herd, etc.).
 
-## Config
+## Configuration
 
-Klasör eklediğinizde şu sırayla aranır:
+When you add a folder, UpSync looks for a config file in this order:
 
 1. `.zed/sftp.json`
 2. `.vscode/sftp.json`
 3. `sftp.json`
 
-Format vscode-sftp ile birebir aynı — mevcut dosyalarınız değişiklik
-gerektirmez. Yorum ve sondaki virgül (JSONC) desteklenir.
+The format is identical to vscode-sftp, so existing config files work
+unchanged. Comments and trailing commas (JSONC) are supported.
 
 ```jsonc
 {
@@ -62,12 +66,12 @@ gerektirmez. Yorum ve sondaki virgül (JSONC) desteklenir.
   "username": "deploy",
   "privateKeyPath": "~/.ssh/id_rsa",
   "remotePath": "/var/www/site",
-  "context": "src",            // sadece bu alt klasör senkronlanır
+  "context": "src",            // sync only this subdirectory
   "uploadOnSave": true,
   "ignore": ["**/node_modules/**", "**/.git/**", "*.log"],
   "watcher": {
-    "autoUpload": true,        // uploadOnSave ile eşdeğer
-    "autoDelete": false        // lokalde silineni uzakta da sil
+    "autoUpload": true,        // equivalent to uploadOnSave
+    "autoDelete": false        // delete remotely when deleted locally
   },
   "syncOption": {
     "delete": false,
@@ -81,161 +85,168 @@ gerektirmez. Yorum ve sondaki virgül (JSONC) desteklenir.
 }
 ```
 
-### Ignore kuralları
+### Ignore rules
 
-`ignore` listesi **gitignore semantiğiyle** değerlendirilir (`ignore` npm
-paketi), glob ile değil. Pratik sonuçları:
+The `ignore` list is evaluated with **gitignore semantics** (the `ignore` npm
+package), not glob semantics. In practice:
 
-- `CLAUDE.md` gibi çıplak isimler **her dizin seviyesinde** eşleşir.
-- `crns/tests/**` gibi yol içeren kalıplar **yalnızca kökten** eşleşir.
-- `**/cache/**` klasörün *içeriğini* yok sayar, klasörün kendisini değil.
-  İzleyici o dizini bir kez açar ama içine inmez — maliyeti tek bir `readdir`.
-  Daha sıkı isterseniz `**/cache` kalıbını da ekleyin.
+- Bare names like `CLAUDE.md` match **at every directory level**.
+- Patterns containing a path, like `crns/tests/**`, match **only from the
+  root**.
+- `**/cache/**` ignores the directory's *contents*, not the directory itself.
+  The watcher opens that directory once but never descends into it — the cost
+  is a single `readdir`. Add `**/cache` too if you want it pruned entirely.
 
-`watcher.files` alanı bu uygulamada kullanılmaz; izleyici her zaman klasörün
-tamamını kapsar ve eleme `ignore` ile yapılır. `watcher.ignore` diye bir alan
-ne burada ne vscode-sftp'de tanımlıdır — yazarsanız sessizce yok sayılır,
-kuralları üst seviye `ignore` içine koyun.
+`watcher.files` is not used here; the watcher always covers the whole folder
+and filtering is done through `ignore`. A `watcher.ignore` field does not
+exist in UpSync or in vscode-sftp — if you write one it is silently ignored,
+so put those patterns in the top-level `ignore`.
 
-### uploadOnSave ve watcher.autoUpload
+### uploadOnSave vs. watcher.autoUpload
 
-vscode-sftp'de `uploadOnSave` editör kaydını, `watcher.autoUpload` dışarıdan
-gelen dosya değişikliğini ifade eder. Bu uygulamanın tek bir izleyicisi var,
-bu yüzden **ikisinden biri açıksa** klasör izlenir. Sadece `"uploadOnSave": true`
-yazan mevcut config'ler ek ayar gerektirmeden çalışır.
+In vscode-sftp, `uploadOnSave` means an editor save while `watcher.autoUpload`
+means an external file change. UpSync has a single watcher, so a folder is
+watched if **either** flag is on. Existing configs that only say
+`"uploadOnSave": true` work without modification.
 
-### Şifreler
+### Passwords
 
-`"password": true` yazın — şifre config dosyasında tutulmaz. Uygulama ilk
-bağlantıda sorar, "Keychain'e kaydet" işaretliyse saklar ve sonraki
-bağlantılarda hiç sormaz. Menüdeki **Kayıtlı Şifreyi Unut** ile silinir.
-Keychain kaydı `kullanici@host:port` anahtarıyla tutulur.
+Set `"password": true` and the password stays out of the config file. UpSync
+asks on first connection, stores it if "Save to Keychain" is checked, and
+never asks again. Clear it with **Forget Saved Password** in the menu.
+Keychain entries are keyed by `user@host:port`.
 
-En iyisi yine de `privateKeyPath` ile anahtar kullanmaktır.
+Using `privateKeyPath` with a key is still the better option.
 
-## Özellikler
+## Features
 
-- Kaydedince otomatik yükleme (dosya türü fark etmez)
-- Manuel yükleme / indirme / klasör senkronu
-- Çift yönlü senkron, `delete` / `skipCreate` / `ignoreExisting` / `update`
-- `autoDelete`: lokalde silineni uzakta da sil
-- Çoklu profil (staging / production), klasör başına ayrı seçim
-- SFTP ve FTP/FTPS
-- `"password": true` ile Keychain'de saklanan şifreler
-- ssh-config okuma, agent auth, jump host — motordan devralındı, bu projede
-  ayrıca test edilmedi
-- gitignore uyumlu ignore kalıpları, `ignoreFile` desteği
-- Etkinlik penceresi: her yükleme, atlama ve hata görünür
+- Automatic upload on save, regardless of file type
+- Manual upload / download / folder sync
+- Bidirectional sync with `delete` / `skipCreate` / `ignoreExisting` / `update`
+- `autoDelete`: mirror local deletions to the remote
+- Multiple profiles (staging / production), selectable per folder
+- SFTP and FTP/FTPS
+- Passwords in Keychain via `"password": true`
+- ssh-config parsing, agent auth, jump hosts — inherited from the engine, not
+  separately tested in this project
+- gitignore-compatible ignore patterns, `ignoreFile` support
+- Activity window showing every upload, skip, and error
 
-## Geliştirme
+## Development
 
     cd engine && npm install && npm run build && npm test
     cd app && swift build
 
-Testler `test/sftp-server.mjs` (ssh2 tabanlı) ve `ftp-srv` ile localhost'ta
-tek kullanımlık sunucular ayağa kaldırır; hiçbir gerçek sunucuya bağlanmaz.
+Tests spin up throwaway servers on localhost — `test/sftp-server.mjs` (built on
+ssh2) and `ftp-srv`. No real server is ever contacted.
 
-## Portlama sırasında düzeltilen upstream hataları
+## Upstream bugs fixed during the port
 
-Aşağıdaki iki hata vscode-sftp'den devralındı ve burada düzeltildi:
+Both of these were inherited from vscode-sftp and fixed here:
 
-1. `sshClient.ts` — `.on('close', this.end())`: listener yerine dönüş değeri
-   (`undefined`) kaydediliyor ve `end()` bağlantı kurulurken hemen çağrılıyordu.
-   Node 22 `undefined` listener'ı reddettiği için bağlantı hiç kurulamıyor.
-2. `transfer.ts` — sync'in silme işlemleri (`fileMissed` / `dirMissed`)
-   `forEach` içinde await edilmeden çağrılıyordu; `sync()` silmeler bitmeden
-   dönüyor ve silme hataları sessizce yutuluyordu.
+1. `sshClient.ts` — `.on('close', this.end())` registered the *return value*
+   (`undefined`) as the listener instead of a function, and called `end()`
+   while the connection was still being established. Node 22 rejects
+   `undefined` listeners, so the connection never opens at all.
+2. `transfer.ts` — sync's delete operations (`fileMissed` / `dirMissed`) were
+   invoked inside `forEach` without being awaited, so `sync()` returned before
+   deletions finished and deletion errors were silently swallowed.
 
-## Doğrulama durumu
+## Verification status
 
-**Uçtan uca test edildi** (`engine/test`, 62 test): SFTP ve FTP üzerinden
-kaydedince yükleme, manuel upload/download, klasör senkronu, `delete` seçeneği,
-`autoDelete`, ignore kalıpları, `"password": true` akışı ve hesap kimliği,
-yanlış şifrede sessiz başarısızlık olmaması. Ayrıca derlenmiş `.app` gerçekten
-başlatılıp yerel test sunucusuna dosya yüklediği doğrulandı.
+**Tested end to end** (`engine/test`, 62 tests): upload-on-save over both SFTP
+and FTP, manual upload/download, folder sync, the `delete` option,
+`autoDelete`, ignore patterns, the `"password": true` flow and its account
+identifier, and the absence of silent failure on a wrong password. The built
+`.app` was also launched for real and confirmed to upload to a local test
+server.
 
-`test/ignore.test.mjs` gerçek bir projenin 44 kurallık ignore listesini birebir
-alıp 42 ayrı yol üzerinde doğruluyor: dizin kalıpları (`**/node_modules/**`),
-derinlemesine dosya kalıpları (`**/*.log`), göreli tam yollar
-(`includes/env.local.php`), çıplak isimler (`CLAUDE.md` — gitignore
-semantiğinde her seviyede eşleşir) ve joker (`docker-compose.*.yml`).
-Aynı kontrol hem kaydedince yükleme hem manuel klasör yüklemesi için yapılıyor.
+`test/ignore.test.mjs` takes a real project's 44-rule ignore list verbatim and
+checks it against 42 separate paths: directory patterns (`**/node_modules/**`),
+deep file patterns (`**/*.log`), relative full paths
+(`includes/env.local.php`), bare names (`CLAUDE.md` — which matches at every
+level under gitignore semantics), and wildcards (`docker-compose.*.yml`). The
+same check runs for both upload-on-save and manual folder upload.
 
-**Devralındı, ayrıca test edilmedi**: ssh-config okuma, agent auth, jump host
-(`hop`), `useTempFile`. Bunlar vscode-sftp'de çalışan kod; port sırasında
-davranışları değiştirilmedi ama burada test kapsamına girmedi.
+**Inherited, not separately tested**: ssh-config parsing, agent auth, jump
+hosts (`hop`), `useTempFile`. This is working vscode-sftp code whose behavior
+was not changed during the port, but it is outside this project's test
+coverage.
 
-**Test edilmedi**: arayüzün kendisi — menü etkileşimleri, klasör ekleme paneli,
-etkinlik penceresi, şifre diyaloğu. Doğrulama `folders.json` önceden
-doldurularak başsız yapıldı.
+**Not tested**: the UI itself — menu interactions, the folder picker, the
+activity window, the password dialog. Verification was done headlessly with a
+pre-seeded `folders.json`.
 
-## Dosya izleme ve fd limiti
+## File watching and the fd limit
 
-macOS'ta izleme **FSEvents** üzerinden yapılır (chokidar 3 + `fsevents`).
-Tüm ağaç için tek bir akış açılır; dizin ya da dosya başına tanıtıcı
-harcanmaz.
+On macOS, watching goes through **FSEvents** (chokidar 3 + `fsevents`). A
+single stream covers the whole tree; no file descriptor is spent per directory
+or per file.
 
-Bu önemli, çünkü:
+This matters because:
 
-- **chokidar 4 macOS FSEvents desteğini kaldırdı** ve dosya başına `fs.watch`
-  açıyor. Bir projede on binlerce tanıtıcı gerekebiliyor.
-- **`open` ile başlatılan uygulamalar launchd'den 256'lık soft fd limiti
-  devralır** (`launchctl limit maxfiles`). Kabuktan çalıştırırken limit çok
-  yüksek olduğu için sorun geliştirmede görünmez, sadece paketlenmiş
-  uygulamada patlar.
+- **chokidar 4 dropped macOS FSEvents support** and falls back to one
+  `fs.watch` per path, which can require tens of thousands of descriptors in a
+  single project.
+- **Apps launched via `open` inherit a soft limit of 256 descriptors from
+  launchd** (`launchctl limit maxfiles`). Running from a shell the limit is
+  enormous, so the problem is invisible during development and only shows up
+  in the packaged app.
 
-İkisi birleşince `EMFILE: too many open files` alınıyor — ve tanıtıcılar
-tükendiği için SSH özel anahtarı bile açılamıyor, yani yükleme de çöküyor.
+Together they produce `EMFILE: too many open files` — and once descriptors run
+out, even the SSH private key cannot be opened, so uploads fail too.
 
-Çift önlem alındı: FSEvents'e geçildi **ve** Swift tarafı motoru başlatmadan
-önce `RLIMIT_NOFILE` soft limitini `kern.maxfilesperproc` (61440) değerine
-çekiyor; çocuk süreç bunu miras alıyor.
+Two defenses are in place: FSEvents **and** the Swift side raising the
+`RLIMIT_NOFILE` soft limit to `kern.maxfilesperproc` (61440) before spawning
+the engine, which the child inherits.
 
-Ölçüm — 1603 dizin / 8000 dosyalık ağaçta, paketlenmiş `.app` ile:
+Measured on a 1603-directory / 8000-file tree with the packaged `.app`:
 
-| | önce (chokidar 4) | sonra (FSEvents) |
+| | before (chokidar 4) | after (FSEvents) |
 |---|---|---|
-| açık fd | 15.000+ gerekiyordu → EMFILE | **44** |
-| bellek (RSS) | ~212 MB | **86 MB** |
+| open fds | 15,000+ needed → EMFILE | **44** |
+| memory (RSS) | ~212 MB | **86 MB** |
 
-`test/fdlimit.test.mjs` bunu regresyona karşı korur: motoru bilerek 256 fd
-limitiyle başlatıp 800+ dizinlik ağaçta yükleme yapıldığını doğrular.
+`test/fdlimit.test.mjs` guards against regression: it starts the engine with a
+deliberate 256-descriptor limit and verifies uploads still work across an
+800+ directory tree.
 
-### Gelecek iyileştirme
+### Possible improvement
 
-İzleme Swift tarafına, doğrudan FSEvents API'sine taşınabilir; o zaman
-`fsevents` native modülünü paketle taşımaya gerek kalmaz. Ancak FSEvents
-yazma *başlarken* tetiklenir; chokidar'ın `awaitWriteFinish` davranışının
-(yarım yazılmış dosyayı yüklememe) yeniden yazılması gerekir. Şimdilik
-yapılmadı.
+Watching could move to the Swift side using the FSEvents API directly, which
+would remove the need to ship the `fsevents` native module. But FSEvents fires
+when a write *starts*, so chokidar's `awaitWriteFinish` behavior — not
+uploading a half-written file — would have to be reimplemented. Not done yet.
 
-## Bilinen sınırlar
+## Known limitations
 
-- Node.js sistemde kurulu olmalı; şu an paket içine gömülmüyor (Node ikilisi
-  ~110MB, .app boyutunu Electron seviyesine çıkarır).
-- Uygulama imzalanmamış (ad-hoc). Gatekeeper ilk açılışta uyarabilir.
-- Girişte otomatik başlatma henüz yok — Sistem Ayarları > Giriş Öğeleri'nden
-  elle eklenebilir.
+- Node.js must be installed on the system; it is not currently bundled (the
+  Node binary is ~110MB, which would push the `.app` to Electron size).
+- The app is ad-hoc signed, not notarized. Gatekeeper may warn on first
+  launch; right-click → **Open**, or run
+  `xattr -dr com.apple.quarantine /Applications/UpSync.app`.
+- No launch-at-login yet — add it manually under System Settings → General →
+  Login Items.
 
-## Sürüm yayınlama
+## Releasing
 
-Sürüm numarasının tek kaynağı `VERSION` dosyasıdır; `build.sh` onu okur ve
-`Info.plist`'e yazar.
+`VERSION` is the single source of truth for the version number; `build.sh`
+reads it and writes it into `Info.plist`.
 
     ./release.sh 0.2.0
 
-Script sırayla: testleri koşar, sürümü yazıp commit eder, `.app`'i derler,
-paketteki sürümü doğrular, `ditto` ile zip'ler (imzayı bozmadan), `vX.Y.Z`
-etiketi atar, main ve etiketi push eder, GitHub Releases'e kurulum notlarıyla
-birlikte yükler.
+The script runs the tests, writes and commits the version, builds the `.app`,
+verifies the version inside the bundle, zips it with `ditto` (which preserves
+the code signature), tags `vX.Y.Z`, pushes main and the tag, and publishes to
+GitHub Releases with install notes.
 
-Ön koşul olarak çalışma dizininin temiz olmasını ve `gh` oturumunu şart koşar;
-etiket zaten varsa durur.
+It requires a clean working tree and an authenticated `gh`, and refuses to run
+if the tag already exists.
 
-## Lisans
+## License
 
-MIT. Bkz. [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
 
-Transfer motoru [vscode-sftp](https://github.com/Natizyskunk/vscode-sftp)'den
-(MIT, Natizyskunk; özgün hali liximomo) türetilmiştir. Port sırasında bulunan
-iki hata yukarıda listelenmiştir.
+The transfer engine is derived from
+[vscode-sftp](https://github.com/Natizyskunk/vscode-sftp) (MIT, Natizyskunk;
+originally by liximomo). The two bugs found during the port are listed above.
