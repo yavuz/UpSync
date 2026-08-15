@@ -1,60 +1,120 @@
+<div align="center">
+
+<img src="docs/icon.png" width="120" alt="UpSync">
+
 # UpSync
 
-*[English](README.md) · **Türkçe***
+**Dosyayı kaydet. Sunucuda.**
 
-**Kaydet, yüklensin.** macOS menü çubuğu uygulaması: tanımladığınız klasörleri
-izler, kaydedilen dosyayı SFTP veya FTP ile uzak sunucuya yükler. Editörden bağımsız çalışır — Zed, VS Code,
-PhpStorm, `vim`, hatta `sed` fark etmez.
+Proje klasörlerinizi izleyen, kaydettiğiniz her dosyayı SFTP veya FTP ile uzak
+sunucuya yükleyen bir macOS menü çubuğu uygulaması. Editör eklentisi yok,
+derleme adımı yok, akılda tutulacak bir şey yok.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/macOS-14%2B-lightgrey.svg)](#gereksinimler)
+[![İndir](https://img.shields.io/github/v/release/yavuz/UpSync?label=indir)](https://github.com/yavuz/UpSync/releases/latest)
+
+*[English](README.md) · Türkçe*
+
+<img src="docs/panel.png" width="380" alt="UpSync menü çubuğu paneli">
+
+</div>
+
+---
 
 ## Neden
 
-Zed'in eklenti API'si panel, komut ve dosya izleyici sunmuyor. Mevcut Zed SFTP
-eklentisi bunu dil sunucusu (LSP) numarasıyla dolanıyor, ama o zaman yükleme
-Zed'in dosyaya hangi dili atadığına bağlı kalıyor. Bu uygulama o bağı tamamen
-koparıyor: izleme işletim sistemi seviyesinde.
+Kaydedince yükleyen araçların çoğu tek bir editörün içinde yaşar. Editör
+değiştirince onları kaybedersiniz — ya da daha kötüsü, belirli dosya türleri
+için sessizce çalışmayı bırakırlar.
 
-## Mimari
+UpSync bunun yerine dosya sistemini izler. Zed'den mi, VS Code'dan mı,
+PhpStorm'dan mı, Vim'den mi yoksa bir kabuk betiğinden mi kaydettiğiniz
+umurunda değildir. Dosya değiştiyse yukarı gider.
 
-    ┌─────────────────────────────┐
-    │  SwiftUI menü çubuğu (app/) │  MenuBarExtra, etkinlik penceresi,
-    │                             │  Keychain, klasör yönetimi
-    └───────────┬─────────────────┘
-                │ stdin/stdout, satır ayraçlı JSON-RPC
-    ┌───────────▼─────────────────┐
-    │  Node motoru (engine/)      │  chokidar, ssh2 (SFTP), ftp (FTP/FTPS),
-    │  esbuild → tek dosya        │  transfer/sync algoritması, ignore, profiller
-    └─────────────────────────────┘
-
-Motor, [vscode-sftp](https://github.com/Natizyskunk/vscode-sftp)'nin transfer
-çekirdeğinden portlandı: `core/fs`, `core/remote-client`, `scheduler`,
-`transferTask`, `ignore`, `fileService` ve `fileHandlers/transfer`. vscode'a
-bağımlı olan her şey `src/shims/` altındaki karşılıklarıyla değiştirildi.
-
-Swift tarafı motoru çocuk süreç olarak başlatır ve süreç ölürse üstel geri
-çekilmeyle yeniden başlatır.
+[vscode-sftp](https://github.com/Natizyskunk/vscode-sftp) ile aynı `sftp.json`
+formatını okur; mevcut proje config'leriniz değişiklik gerektirmez.
 
 ## Kurulum
 
-Gereksinim: Node.js 18+ (motor için), Xcode 15+ / Swift 6 (derlemek için).
+**Son sürümü indirin** → [Releases](https://github.com/yavuz/UpSync/releases/latest)
 
-    ./build.sh
+1. Zip'i açın, `UpSync.app`'i **Applications** klasörüne sürükleyin
+2. İlk açılışta uygulamaya sağ tık → **Aç** (paket ad-hoc imzalı, notarize
+   değil), ya da:
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/UpSync.app
+   ```
+3. Menü çubuğu ikonuna tıklayın → **Add Folder**
 
-`build/UpSync.app` üretilir. Applications klasörüne kopyalayabilirsiniz.
-Hazır sürümler [Releases sayfasında](https://github.com/yavuz/UpSync/releases).
+### Gereksinimler
 
-Uygulama sistemdeki Node'u arar: paket içi → `/opt/homebrew/bin` →
-`/usr/local/bin` → `/usr/bin` → giriş kabuğunun PATH'i (nvm, Herd vb. için).
+- macOS 14 veya üzeri
+- **Node.js 18+** — senkron motoru onun üzerinde çalışır. UpSync Node'u şu
+  sırayla arar: paket içi → `/opt/homebrew/bin` → `/usr/local/bin` →
+  `/usr/bin` → giriş kabuğunuzun `PATH`'i (nvm, Herd, fnm hepsi çalışır).
+  ```bash
+  brew install node
+  ```
 
-## Config
+### Kaynaktan derleme
 
-Klasör eklediğinizde şu sırayla aranır:
+```bash
+git clone https://github.com/yavuz/UpSync.git
+cd UpSync
+./build.sh
+```
+
+`build/UpSync.app` üretir. Node'a ek olarak Xcode 15+ / Swift 6 gerekir.
+
+## Hızlı başlangıç
+
+Projenizde `.vscode/sftp.json` (ya da `.zed/sftp.json`, ya da `sftp.json`)
+oluşturun:
+
+```jsonc
+{
+  "host": "example.com",
+  "username": "deploy",
+  "privateKeyPath": "~/.ssh/id_rsa",
+  "remotePath": "/var/www/site",
+  "uploadOnSave": true,
+  "ignore": ["**/node_modules/**", "**/.git/**", "*.log"]
+}
+```
+
+Klasörü UpSync'e ekleyin, bir dosya kaydedin, etkinlik listesinde belirmesini
+izleyin.
+
+## Neler var
+
+<img src="docs/activity.png" width="640" alt="Etkinlik penceresi">
+
+- **Kaydedince yükleme** — her dosya türü, her editör, her uzantı
+- **Canlı ilerleme** — büyük klasör senkronlarında kaç dosyanın uçtuğunu görün
+- **Hiçbir şey sessizce başarısız olmaz** — her yükleme, atlama ve hata
+  görünür; hata metni ve dosya yolu ile birlikte
+- **Manuel yükleme / indirme / senkron**, çift yönlü dahil
+- **Çoklu profil** — klasör başına staging ve production
+- **SFTP ve FTP/FTPS**
+- **Şifreler Keychain'de**, config dosyanızda değil
+- **gitignore tarzı ignore kalıpları**, ayrıca `ignoreFile` desteği
+
+<img src="docs/settings.png" width="640" alt="Ayarlar penceresi">
+
+## Yapılandırma
+
+UpSync config dosyasını şu sırayla arar:
 
 1. `.zed/sftp.json`
 2. `.vscode/sftp.json`
 3. `sftp.json`
 
-Format vscode-sftp ile birebir aynı — mevcut dosyalarınız değişiklik
-gerektirmez. Yorum ve sondaki virgül (JSONC) desteklenir.
+Yorumlar ve sondaki virgüller (JSONC) desteklenir. Panel hangi dosyayı
+yüklediğini gösterir; tahmin etmeye gerek kalmaz.
+
+<details>
+<summary><b>Tam config referansı</b></summary>
 
 ```jsonc
 {
@@ -63,182 +123,183 @@ gerektirmez. Yorum ve sondaki virgül (JSONC) desteklenir.
   "protocol": "sftp",          // "sftp" | "ftp"
   "port": 22,
   "username": "deploy",
+
+  // Birini seçin: anahtar (önerilen), şifre, ya da bir kez sorulup
+  // Keychain'de saklanması için "password": true.
   "privateKeyPath": "~/.ssh/id_rsa",
+  "passphrase": true,
+  "password": true,
+
   "remotePath": "/var/www/site",
-  "context": "src",            // sadece bu alt klasör senkronlanır
+  "context": "src",            // yalnızca bu alt klasörü senkronla
+
   "uploadOnSave": true,
-  "ignore": ["**/node_modules/**", "**/.git/**", "*.log"],
   "watcher": {
     "autoUpload": true,        // uploadOnSave ile eşdeğer
     "autoDelete": false        // lokalde silineni uzakta da sil
   },
+
+  "ignore": ["**/node_modules/**", "**/.git/**", "*.log"],
+  "ignoreFile": ".gitignore",
+
   "syncOption": {
-    "delete": false,
+    "delete": false,           // lokalde olmayan uzak dosyaları sil
     "skipCreate": false,
     "ignoreExisting": false,
-    "update": false
+    "update": false            // yalnızca daha eskisinin üzerine yaz
   },
+
+  "concurrency": 4,
+  "connectTimeout": 10000,
+  "useTempFile": false,        // geçici dosyaya yükle, sonra adlandır
+  "filePerm": 644,
+  "dirPerm": 755,
+
   "profiles": {
-    "staging": { "host": "staging.example.com", "remotePath": "/var/www/staging" }
+    "staging": {
+      "host": "staging.example.com",
+      "remotePath": "/var/www/staging"
+    }
   }
 }
 ```
 
+ssh-config okuma, agent kimlik doğrulama ve jump host desteği vscode-sftp
+motorundan devralındı ve aynı şekilde çalışır.
+
+</details>
+
 ### Ignore kuralları
 
-`ignore` listesi **gitignore semantiğiyle** değerlendirilir (`ignore` npm
-paketi), glob ile değil. Pratik sonuçları:
+Kalıplar **gitignore semantiğiyle** değerlendirilir, glob ile değil:
 
-- `CLAUDE.md` gibi çıplak isimler **her dizin seviyesinde** eşleşir.
-- `crns/tests/**` gibi yol içeren kalıplar **yalnızca kökten** eşleşir.
+- `CLAUDE.md` gibi çıplak isimler **her dizin seviyesinde** eşleşir
+- `tests/fixtures/**` gibi yol içeren kalıplar **yalnızca kökten** eşleşir
 - `**/cache/**` klasörün *içeriğini* yok sayar, klasörün kendisini değil.
-  İzleyici o dizini bir kez açar ama içine inmez — maliyeti tek bir `readdir`.
-  Daha sıkı isterseniz `**/cache` kalıbını da ekleyin.
-
-`watcher.files` alanı bu uygulamada kullanılmaz; izleyici her zaman klasörün
-tamamını kapsar ve eleme `ignore` ile yapılır. `watcher.ignore` diye bir alan
-ne burada ne vscode-sftp'de tanımlıdır — yazarsanız sessizce yok sayılır,
-kuralları üst seviye `ignore` içine koyun.
+  Tamamen atlanmasını istiyorsanız `**/cache` kalıbını da ekleyin.
 
 ### uploadOnSave ve watcher.autoUpload
 
-vscode-sftp'de `uploadOnSave` editör kaydını, `watcher.autoUpload` dışarıdan
-gelen dosya değişikliğini ifade eder. Bu uygulamanın tek bir izleyicisi var,
-bu yüzden **ikisinden biri açıksa** klasör izlenir. Sadece `"uploadOnSave": true`
-yazan mevcut config'ler ek ayar gerektirmeden çalışır.
+vscode-sftp bunları ayrı ele alır — biri editör kaydını, diğeri dışarıdan gelen
+değişikliği ifade eder. UpSync'in tek izleyicisi var, bu yüzden **ikisinden
+biri** açıksa klasör izlenir. Mevcut config'ler değişiklik gerektirmez.
 
 ### Şifreler
 
-`"password": true` yazın — şifre config dosyasında tutulmaz. Uygulama ilk
-bağlantıda sorar, "Keychain'e kaydet" işaretliyse saklar ve sonraki
-bağlantılarda hiç sormaz. Menüdeki **Kayıtlı Şifreyi Unut** ile silinir.
-Keychain kaydı `kullanici@host:port` anahtarıyla tutulur.
+`"password": true` yazın. UpSync bir kez sorar, Keychain'e `kullanıcı@host:port`
+anahtarıyla kaydeder ve bir daha sormaz. **Forget Saved Password** ile silinir.
 
-En iyisi yine de `privateKeyPath` ile anahtar kullanmaktır.
+Yine de SSH anahtarı kullanmak daha iyidir.
 
-## Özellikler
+## Sorun giderme
 
-- Kaydedince otomatik yükleme (dosya türü fark etmez)
-- Manuel yükleme / indirme / klasör senkronu
-- Çift yönlü senkron, `delete` / `skipCreate` / `ignoreExisting` / `update`
-- `autoDelete`: lokalde silineni uzakta da sil
-- Çoklu profil (staging / production), klasör başına ayrı seçim
-- SFTP ve FTP/FTPS
-- `"password": true` ile Keychain'de saklanan şifreler
-- ssh-config okuma, agent auth, jump host — motordan devralındı, bu projede
-  ayrıca test edilmedi
-- gitignore uyumlu ignore kalıpları, `ignoreFile` desteği
-- Etkinlik penceresi: her yükleme, atlama ve hata görünür
+<details>
+<summary><b>"UpSync açılamıyor çünkü Apple denetleyemedi"</b></summary>
 
-## Geliştirme
+Sürüm ad-hoc imzalı, ücretli Apple Developer hesabıyla notarize edilmedi.
+Uygulamaya sağ tık → **Aç**, ya da:
 
-    cd engine && npm install && npm run build && npm test
-    cd app && swift build
+```bash
+xattr -dr com.apple.quarantine /Applications/UpSync.app
+```
+</details>
 
-Testler `test/sftp-server.mjs` (ssh2 tabanlı) ve `ftp-srv` ile localhost'ta
-tek kullanımlık sunucular ayağa kaldırır; hiçbir gerçek sunucuya bağlanmaz.
+<details>
+<summary><b>"Node.js not found"</b></summary>
 
-## Portlama sırasında düzeltilen upstream hataları
+Node 18 veya üzerini kurun:
 
-Aşağıdaki iki hata vscode-sftp'den devralındı ve burada düzeltildi:
+```bash
+brew install node
+```
 
-1. `sshClient.ts` — `.on('close', this.end())`: listener yerine dönüş değeri
-   (`undefined`) kaydediliyor ve `end()` bağlantı kurulurken hemen çağrılıyordu.
-   Node 22 `undefined` listener'ı reddettiği için bağlantı hiç kurulamıyor.
-2. `transfer.ts` — sync'in silme işlemleri (`fileMissed` / `dirMissed`)
-   `forEach` içinde await edilmeden çağrılıyordu; `sync()` silmeler bitmeden
-   dönüyor ve silme hataları sessizce yutuluyordu.
+nvm ya da Herd kullanıyorsanız UpSync giriş kabuğunuzun `PATH`'ini okur; yeni
+bir terminalde `node` komutunun çalıştığından emin olun.
+</details>
 
-## Doğrulama durumu
+<details>
+<summary><b>Kaydediyorum ama hiçbir şey yüklenmiyor</b></summary>
 
-**Uçtan uca test edildi** (`engine/test`, 62 test): SFTP ve FTP üzerinden
-kaydedince yükleme, manuel upload/download, klasör senkronu, `delete` seçeneği,
-`autoDelete`, ignore kalıpları, `"password": true` akışı ve hesap kimliği,
-yanlış şifrede sessiz başarısızlık olmaması. Ayrıca derlenmiş `.app` gerçekten
-başlatılıp yerel test sunucusuna dosya yüklediği doğrulandı.
+Paneli açıp klasör kartına bakın:
 
-`test/ignore.test.mjs` gerçek bir projenin 44 kurallık ignore listesini birebir
-alıp 42 ayrı yol üzerinde doğruluyor: dizin kalıpları (`**/node_modules/**`),
-derinlemesine dosya kalıpları (`**/*.log`), göreli tam yollar
-(`includes/env.local.php`), çıplak isimler (`CLAUDE.md` — gitignore
-semantiğinde her seviyede eşleşir) ve joker (`docker-compose.*.yml`).
-Aynı kontrol hem kaydedince yükleme hem manuel klasör yüklemesi için yapılıyor.
+- Kırmızı nokta ve hata mesajı: config yüklenemedi ya da bağlantı kurulamadı —
+  mesaj hangisi olduğunu söyler.
+- "uploadOnSave is off in the config": ne `uploadOnSave` ne de
+  `watcher.autoUpload` `true`.
+- Dosya bir `ignore` kalıbına takılıyor olabilir — etkinlik penceresi
+  atlananları da kaydeder.
+</details>
 
-**Devralındı, ayrıca test edilmedi**: ssh-config okuma, agent auth, jump host
-(`hop`), `useTempFile`. Bunlar vscode-sftp'de çalışan kod; port sırasında
-davranışları değiştirilmedi ama burada test kapsamına girmedi.
+<details>
+<summary><b>Dosyalarım iki kez yüklendi</b></summary>
 
-**Test edilmedi**: arayüzün kendisi — menü etkileşimleri, klasör ekleme paneli,
-etkinlik penceresi, şifre diyaloğu. Doğrulama `folders.json` önceden
-doldurularak başsız yapıldı.
+Muhtemelen iki UpSync kopyası birden çalışıyordu. İkisini de menü çubuğundan
+kapatıp tek kopya açın. (0.2.0'dan itibaren motor ebeveyniyle birlikte
+kapandığı için bunun olmaması gerekir.)
+</details>
 
-## Dosya izleme ve fd limiti
+## Kaputun altında
 
-macOS'ta izleme **FSEvents** üzerinden yapılır (chokidar 3 + `fsevents`).
-Tüm ağaç için tek bir akış açılır; dizin ya da dosya başına tanıtıcı
-harcanmaz.
+    ┌─────────────────────────────┐
+    │  SwiftUI menü çubuğu (app/) │  panel, etkinlik, ayarlar, Keychain
+    └───────────┬─────────────────┘
+                │ stdio üzerinden satır ayraçlı JSON-RPC
+    ┌───────────▼─────────────────┐
+    │  Node motoru (engine/)      │  FSEvents izleyici, ssh2 + ftp,
+    │  esbuild → tek dosya        │  transfer/sync algoritması, ignore
+    └─────────────────────────────┘
 
-Bu önemli, çünkü:
+Transfer çekirdeği [vscode-sftp](https://github.com/Natizyskunk/vscode-sftp)'den
+portlandı; vscode'a bağımlı her şey bir shim ile değiştirildi. Swift uygulaması
+motoru denetler ve ölürse üstel geri çekilmeyle yeniden başlatır.
 
-- **chokidar 4 macOS FSEvents desteğini kaldırdı** ve dosya başına `fs.watch`
-  açıyor. Bir projede on binlerce tanıtıcı gerekebiliyor.
-- **`open` ile başlatılan uygulamalar launchd'den 256'lık soft fd limiti
-  devralır** (`launchctl limit maxfiles`). Kabuktan çalıştırırken limit çok
-  yüksek olduğu için sorun geliştirmede görünmez, sadece paketlenmiş
-  uygulamada patlar.
+**Port sırasında iki upstream hatası düzeltildi:**
 
-İkisi birleşince `EMFILE: too many open files` alınıyor — ve tanıtıcılar
-tükendiği için SSH özel anahtarı bile açılamıyor, yani yükleme de çöküyor.
+1. `sshClient.ts` listener yerine bir fonksiyonun *dönüş değerini*
+   (`undefined`) kaydediyor ve `end()`'i bağlantı kurulurken çağırıyordu.
+   Node 22 `undefined` listener'ı reddettiği için bağlantı hiç kurulmuyordu.
+2. `transfer.ts` sync silmelerini `forEach` içinde await etmeden tetikliyordu;
+   `sync()` erken dönüyor ve silme hataları yutuluyordu.
 
-Çift önlem alındı: FSEvents'e geçildi **ve** Swift tarafı motoru başlatmadan
-önce `RLIMIT_NOFILE` soft limitini `kern.maxfilesperproc` (61440) değerine
-çekiyor; çocuk süreç bunu miras alıyor.
+**Dosya izleme** FSEvents ile yapılır (chokidar 3 + `fsevents`) — tüm ağaç için
+tek akış. chokidar 4 macOS'ta FSEvents desteğini kaldırıp dosya başına
+`fs.watch`'a düşüyor; launchd'nin GUI uygulamalarına verdiği 256 tanıtıcı
+limitiyle birleşince gerçek projelerde `EMFILE` hatası veriyordu. 1603 dizinlik
+bir ağaçta ölçüm: **44 açık tanıtıcı, 86 MB RSS**.
 
-Ölçüm — 1603 dizin / 8000 dosyalık ağaçta, paketlenmiş `.app` ile:
+**Test**: 68 uçtan uca test — SFTP ve FTP yükleme/indirme/senkron, ignore
+kuralları, Keychain şifre akışı, dosya başına ilerleme olayları, düşük tanıtıcı
+limiti ve yetim süreç kapanışı. Testler localhost'ta tek kullanımlık ssh2 ve
+`ftp-srv` sunucuları kaldırır; hiçbir gerçek sunucuya bağlanılmaz.
 
-| | önce (chokidar 4) | sonra (FSEvents) |
-|---|---|---|
-| açık fd | 15.000+ gerekiyordu → EMFILE | **44** |
-| bellek (RSS) | ~212 MB | **86 MB** |
-
-`test/fdlimit.test.mjs` bunu regresyona karşı korur: motoru bilerek 256 fd
-limitiyle başlatıp 800+ dizinlik ağaçta yükleme yapıldığını doğrular.
-
-### Gelecek iyileştirme
-
-İzleme Swift tarafına, doğrudan FSEvents API'sine taşınabilir; o zaman
-`fsevents` native modülünü paketle taşımaya gerek kalmaz. Ancak FSEvents
-yazma *başlarken* tetiklenir; chokidar'ın `awaitWriteFinish` davranışının
-(yarım yazılmış dosyayı yüklememe) yeniden yazılması gerekir. Şimdilik
-yapılmadı.
-
-## Bilinen sınırlar
-
-- Node.js sistemde kurulu olmalı; şu an paket içine gömülmüyor (Node ikilisi
-  ~110MB, .app boyutunu Electron seviyesine çıkarır).
-- Uygulama imzalanmamış (ad-hoc). Gatekeeper ilk açılışta uyarabilir.
-- Girişte otomatik başlatma henüz yok — Sistem Ayarları > Giriş Öğeleri'nden
-  elle eklenebilir.
+```bash
+cd engine && npm install && npm test
+```
 
 ## Sürüm yayınlama
 
-Sürüm numarasının tek kaynağı `VERSION` dosyasıdır; `build.sh` onu okur ve
-`Info.plist`'e yazar.
+`VERSION` tek doğruluk kaynağıdır.
 
-    ./release.sh 0.2.0
+```bash
+./release.sh 0.2.0
+```
 
-Script sırayla: testleri koşar, sürümü yazıp commit eder, `.app`'i derler,
-paketteki sürümü doğrular, `ditto` ile zip'ler (imzayı bozmadan), `vX.Y.Z`
-etiketi atar, main ve etiketi push eder, GitHub Releases'e kurulum notlarıyla
-birlikte yükler.
+Testleri koşar, derler, paketteki sürümü doğrular, `ditto` ile zipler (imzayı
+koruyarak), etiketler, push eder ve GitHub Releases'e yayınlar.
 
-Ön koşul olarak çalışma dizininin temiz olmasını ve `gh` oturumunu şart koşar;
-etiket zaten varsa durur.
+## Uygulama ikonu
+
+`icon/render.swift` içinde programatik çiziliyor — binary varlık yok, tüm
+boyutlar `./icon/make-icns.sh` ile tek kaynaktan üretiliyor.
+
+Sanat bilerek kenardan kenara. macOS 26 eski usul `.icns` ikonlarını kendi
+standart karesine oturtuyor; kendi yuvarlatılmış karemizi çizmek çift çerçeve
+üretiyordu. macOS 15 ve öncesinde bunun bedeli köşelerin yuvarlanmaması;
+kalıcı çözüm bir Icon Composer `.icon` varlığı da eklemek.
 
 ## Lisans
 
-MIT. Bkz. [LICENSE](LICENSE).
+MIT — bkz. [LICENSE](LICENSE).
 
 Transfer motoru [vscode-sftp](https://github.com/Natizyskunk/vscode-sftp)'den
-(MIT, Natizyskunk; özgün hali liximomo) türetilmiştir. Port sırasında bulunan
-iki hata yukarıda listelenmiştir.
+türetilmiştir (MIT, Natizyskunk; özgün hali liximomo).

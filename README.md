@@ -1,61 +1,116 @@
+<div align="center">
+
+<img src="docs/icon.png" width="120" alt="UpSync">
+
 # UpSync
 
-***English** · [Türkçe](README.tr.md)*
+**Save a file. It's on the server.**
 
-**Save it, ship it.** A macOS menu bar app that watches the folders you point
-it at and uploads each saved file to a remote server over SFTP or FTP. It is
-editor-independent — Zed, VS Code, PhpStorm, `vim`, even `sed` all work,
-because the watching happens at the OS level.
+A macOS menu bar app that watches your project folders and uploads every saved
+file over SFTP or FTP. No editor plugin, no build step, no thinking about it.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/macOS-14%2B-lightgrey.svg)](#requirements)
+[![Download](https://img.shields.io/github/v/release/yavuz/UpSync?label=download)](https://github.com/yavuz/UpSync/releases/latest)
+
+*English · [Türkçe](README.tr.md)*
+
+<img src="docs/panel.png" width="380" alt="UpSync menu bar panel">
+
+</div>
+
+---
 
 ## Why
 
-Zed's extension API offers no panels, no commands, and no file watchers. The
-existing Zed SFTP extension works around this with a language-server trick,
-but then uploads depend on which language Zed assigns to a file — save a
-`.tpl` or `.sql` and nothing happens. UpSync cuts that dependency entirely.
+Most upload-on-save tools live inside one editor. Move to a different editor and
+you lose them — or worse, they silently stop working for certain file types.
 
-## Architecture
+UpSync watches the filesystem instead. It does not care whether you saved from
+Zed, VS Code, PhpStorm, Vim, or a shell script. If the file changed, it goes up.
 
-    ┌─────────────────────────────┐
-    │  SwiftUI menu bar (app/)    │  MenuBarExtra, activity window,
-    │                             │  Keychain, folder management
-    └───────────┬─────────────────┘
-                │ stdin/stdout, newline-delimited JSON-RPC
-    ┌───────────▼─────────────────┐
-    │  Node engine (engine/)      │  chokidar, ssh2 (SFTP), ftp (FTP/FTPS),
-    │  esbuild → single file      │  transfer/sync algorithm, ignore, profiles
-    └─────────────────────────────┘
-
-The engine is ported from [vscode-sftp](https://github.com/Natizyskunk/vscode-sftp)'s
-transfer core: `core/fs`, `core/remote-client`, `scheduler`, `transferTask`,
-`ignore`, `fileService`, and `fileHandlers/transfer`. Everything that depended
-on the vscode API was replaced with equivalents under `engine/src/shims/`.
-
-The Swift side spawns the engine as a child process and restarts it with
-exponential backoff if it dies.
+It reads the same `sftp.json` format as
+[vscode-sftp](https://github.com/Natizyskunk/vscode-sftp), so existing project
+configs work unchanged.
 
 ## Install
 
-Requirements: Node.js 18+ (for the engine), Xcode 15+ / Swift 6 (to build).
+**Download the latest release** → [Releases](https://github.com/yavuz/UpSync/releases/latest)
 
-    ./build.sh
+1. Unzip and drag `UpSync.app` to **Applications**
+2. First launch: right-click the app → **Open** (the build is ad-hoc signed, not
+   notarized), or run:
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/UpSync.app
+   ```
+3. Click the menu bar icon → **Add Folder**
 
-This produces `build/UpSync.app`, which you can copy to Applications.
-Prebuilt releases are on the [Releases page](https://github.com/yavuz/UpSync/releases).
+### Requirements
 
-The app locates Node in this order: bundled → `/opt/homebrew/bin` →
-`/usr/local/bin` → `/usr/bin` → your login shell's PATH (for nvm, Herd, etc.).
+- macOS 14 or later
+- **Node.js 18+** — the sync engine runs on it. UpSync looks for Node in this
+  order: bundled → `/opt/homebrew/bin` → `/usr/local/bin` → `/usr/bin` → your
+  login shell's `PATH` (so nvm, Herd, fnm all work).
+  ```bash
+  brew install node
+  ```
+
+### Build from source
+
+```bash
+git clone https://github.com/yavuz/UpSync.git
+cd UpSync
+./build.sh
+```
+
+Produces `build/UpSync.app`. Needs Xcode 15+ / Swift 6 in addition to Node.
+
+## Quick start
+
+Create `.vscode/sftp.json` (or `.zed/sftp.json`, or `sftp.json`) in your project:
+
+```jsonc
+{
+  "host": "example.com",
+  "username": "deploy",
+  "privateKeyPath": "~/.ssh/id_rsa",
+  "remotePath": "/var/www/site",
+  "uploadOnSave": true,
+  "ignore": ["**/node_modules/**", "**/.git/**", "*.log"]
+}
+```
+
+Add the folder in UpSync, save a file, and watch it appear in the activity list.
+
+## What you get
+
+<img src="docs/activity.png" width="640" alt="Activity window">
+
+- **Upload on save** — any file type, any editor, any extension
+- **Live progress** — see files in flight during large folder syncs
+- **Nothing fails silently** — every upload, skip and error is visible, with the
+  error text and the file path
+- **Manual upload / download / sync**, including two-way sync
+- **Multiple profiles** — staging and production per folder
+- **SFTP and FTP/FTPS**
+- **Passwords in the Keychain**, not in your config file
+- **gitignore-style ignore patterns**, plus `ignoreFile` support
+
+<img src="docs/settings.png" width="640" alt="Settings window">
 
 ## Configuration
 
-When you add a folder, UpSync looks for a config file in this order:
+UpSync looks for a config file in this order:
 
 1. `.zed/sftp.json`
 2. `.vscode/sftp.json`
 3. `sftp.json`
 
-The format is identical to vscode-sftp, so existing config files work
-unchanged. Comments and trailing commas (JSONC) are supported.
+Comments and trailing commas (JSONC) are supported. The panel shows which file
+it actually loaded, so there is never a guess.
+
+<details>
+<summary><b>Full config reference</b></summary>
 
 ```jsonc
 {
@@ -64,206 +119,184 @@ unchanged. Comments and trailing commas (JSONC) are supported.
   "protocol": "sftp",          // "sftp" | "ftp"
   "port": 22,
   "username": "deploy",
+
+  // Pick one: key (recommended), password, or "password": true to be
+  // prompted once and stored in the Keychain.
   "privateKeyPath": "~/.ssh/id_rsa",
+  "passphrase": true,
+  "password": true,
+
   "remotePath": "/var/www/site",
-  "context": "src",            // sync only this subdirectory
+  "context": "src",            // only sync this subdirectory
+
   "uploadOnSave": true,
-  "ignore": ["**/node_modules/**", "**/.git/**", "*.log"],
   "watcher": {
     "autoUpload": true,        // equivalent to uploadOnSave
     "autoDelete": false        // delete remotely when deleted locally
   },
+
+  "ignore": ["**/node_modules/**", "**/.git/**", "*.log"],
+  "ignoreFile": ".gitignore",
+
   "syncOption": {
-    "delete": false,
+    "delete": false,           // remove remote files missing locally
     "skipCreate": false,
     "ignoreExisting": false,
-    "update": false
+    "update": false            // only overwrite older files
   },
+
+  "concurrency": 4,
+  "connectTimeout": 10000,
+  "useTempFile": false,        // upload to a temp file, then rename
+  "filePerm": 644,
+  "dirPerm": 755,
+
   "profiles": {
-    "staging": { "host": "staging.example.com", "remotePath": "/var/www/staging" }
+    "staging": {
+      "host": "staging.example.com",
+      "remotePath": "/var/www/staging"
+    }
   }
 }
 ```
 
+SSH config parsing, agent authentication and jump hosts are inherited from the
+vscode-sftp engine and work the same way.
+
+</details>
+
 ### Ignore rules
 
-The `ignore` list is evaluated with **gitignore semantics** (the `ignore` npm
-package), not glob semantics. In practice:
+Patterns use **gitignore semantics**, not glob semantics:
 
-- Bare names like `CLAUDE.md` match **at every directory level**.
-- Patterns containing a path, like `crns/tests/**`, match **only from the
-  root**.
+- A bare name like `CLAUDE.md` matches **at every directory level**
+- A pattern with a path like `tests/fixtures/**` matches **only from the root**
 - `**/cache/**` ignores the directory's *contents*, not the directory itself.
-  The watcher opens that directory once but never descends into it — the cost
-  is a single `readdir`. Add `**/cache` too if you want it pruned entirely.
-
-`watcher.files` is not used here; the watcher always covers the whole folder
-and filtering is done through `ignore`. A `watcher.ignore` field does not
-exist in UpSync or in vscode-sftp — if you write one it is silently ignored,
-so put those patterns in the top-level `ignore`.
+  Add `**/cache` too if you want it skipped entirely.
 
 ### uploadOnSave vs. watcher.autoUpload
 
-In vscode-sftp, `uploadOnSave` means an editor save while `watcher.autoUpload`
-means an external file change. UpSync has a single watcher, so a folder is
-watched if **either** flag is on. Existing configs that only say
-`"uploadOnSave": true` work without modification.
+vscode-sftp treats these separately — one means an editor save, the other an
+external change. UpSync has a single watcher, so a folder is watched if
+**either** is on. Existing configs need no changes.
 
 ### Passwords
 
-Set `"password": true` and the password stays out of the config file. UpSync
-asks on first connection, stores it if "Save to Keychain" is checked, and
-never asks again. Clear it with **Forget Saved Password** in the menu.
-Keychain entries are keyed by `user@host:port`.
+Set `"password": true`. UpSync asks once, stores it in the Keychain under
+`user@host:port`, and never asks again. Clear it with **Forget Saved Password**.
 
-Using `privateKeyPath` with a key is still the better option.
+Using an SSH key is still better.
 
-## Features
+## Troubleshooting
 
-- Automatic upload on save, regardless of file type
-- Manual upload / download / folder sync
-- Bidirectional sync with `delete` / `skipCreate` / `ignoreExisting` / `update`
-- `autoDelete`: mirror local deletions to the remote
-- Multiple profiles (staging / production), selectable per folder
-- SFTP and FTP/FTPS
-- Passwords in Keychain via `"password": true`
-- ssh-config parsing, agent auth, jump hosts — inherited from the engine, not
-  separately tested in this project
-- gitignore-compatible ignore patterns, `ignoreFile` support
-- Activity window showing every upload, skip, and error
+<details>
+<summary><b>"UpSync can't be opened because Apple cannot check it"</b></summary>
 
-## Development
+The release is ad-hoc signed, not notarized with a paid Apple Developer
+account. Right-click the app → **Open**, or:
 
-    cd engine && npm install && npm run build && npm test
-    cd app && swift build
+```bash
+xattr -dr com.apple.quarantine /Applications/UpSync.app
+```
+</details>
 
-Tests spin up throwaway servers on localhost — `test/sftp-server.mjs` (built on
-ssh2) and `ftp-srv`. No real server is ever contacted.
+<details>
+<summary><b>"Node.js not found"</b></summary>
 
-## Upstream bugs fixed during the port
+Install Node 18 or later:
 
-Both of these were inherited from vscode-sftp and fixed here:
+```bash
+brew install node
+```
 
-1. `sshClient.ts` — `.on('close', this.end())` registered the *return value*
-   (`undefined`) as the listener instead of a function, and called `end()`
-   while the connection was still being established. Node 22 rejects
-   `undefined` listeners, so the connection never opens at all.
-2. `transfer.ts` — sync's delete operations (`fileMissed` / `dirMissed`) were
-   invoked inside `forEach` without being awaited, so `sync()` returned before
-   deletions finished and deletion errors were silently swallowed.
+If you use nvm or Herd, UpSync reads your login shell's `PATH`, so make sure
+`node` is on it in a fresh terminal.
+</details>
 
-## Verification status
+<details>
+<summary><b>Nothing uploads when I save</b></summary>
 
-**Tested end to end** (`engine/test`, 62 tests): upload-on-save over both SFTP
-and FTP, manual upload/download, folder sync, the `delete` option,
-`autoDelete`, ignore patterns, the `"password": true` flow and its account
-identifier, and the absence of silent failure on a wrong password. The built
-`.app` was also launched for real and confirmed to upload to a local test
-server.
+Open the panel and check the folder card:
 
-`test/ignore.test.mjs` takes a real project's 44-rule ignore list verbatim and
-checks it against 42 separate paths: directory patterns (`**/node_modules/**`),
-deep file patterns (`**/*.log`), relative full paths
-(`includes/env.local.php`), bare names (`CLAUDE.md` — which matches at every
-level under gitignore semantics), and wildcards (`docker-compose.*.yml`). The
-same check runs for both upload-on-save and manual folder upload.
+- A red dot with an error message means the config failed to load or the
+  connection failed — the message says which.
+- "uploadOnSave is off in the config" means neither `uploadOnSave` nor
+  `watcher.autoUpload` is `true`.
+- The file may match an `ignore` pattern — the activity window logs skips.
+</details>
 
-**Inherited, not separately tested**: ssh-config parsing, agent auth, jump
-hosts (`hop`), `useTempFile`. This is working vscode-sftp code whose behavior
-was not changed during the port, but it is outside this project's test
-coverage.
+<details>
+<summary><b>My files uploaded twice</b></summary>
 
-**Not tested**: the UI itself — menu interactions, the folder picker, the
-activity window, the password dialog. Verification was done headlessly with a
-pre-seeded `folders.json`.
+Two copies of UpSync were probably running. Quit both from the menu bar and
+launch one. (Since 0.2.0 the engine shuts down with its parent, so this should
+no longer happen.)
+</details>
 
-## File watching and the fd limit
+## Under the hood
 
-On macOS, watching goes through **FSEvents** (chokidar 3 + `fsevents`). A
-single stream covers the whole tree; no file descriptor is spent per directory
-or per file.
+    ┌─────────────────────────────┐
+    │  SwiftUI menu bar (app/)    │  panel, activity, settings, Keychain
+    └───────────┬─────────────────┘
+                │ newline-delimited JSON-RPC over stdio
+    ┌───────────▼─────────────────┐
+    │  Node engine (engine/)      │  FSEvents watcher, ssh2 + ftp,
+    │  esbuild → single file      │  transfer/sync algorithm, ignore rules
+    └─────────────────────────────┘
 
-This matters because:
+The transfer core is ported from
+[vscode-sftp](https://github.com/Natizyskunk/vscode-sftp) with every vscode
+dependency replaced by a shim. The Swift app supervises the engine and restarts
+it with exponential backoff.
 
-- **chokidar 4 dropped macOS FSEvents support** and falls back to one
-  `fs.watch` per path, which can require tens of thousands of descriptors in a
-  single project.
-- **Apps launched via `open` inherit a soft limit of 256 descriptors from
-  launchd** (`launchctl limit maxfiles`). Running from a shell the limit is
-  enormous, so the problem is invisible during development and only shows up
-  in the packaged app.
+**Two upstream bugs were fixed during the port:**
 
-Together they produce `EMFILE: too many open files` — and once descriptors run
-out, even the SSH private key cannot be opened, so uploads fail too.
+1. `sshClient.ts` registered a listener's *return value* (`undefined`) instead
+   of a function, and called `end()` mid-connect. Node 22 rejects `undefined`
+   listeners, so the connection never opened.
+2. `transfer.ts` fired sync deletions inside `forEach` without awaiting them, so
+   `sync()` returned early and deletion errors were swallowed.
 
-Two defenses are in place: FSEvents **and** the Swift side raising the
-`RLIMIT_NOFILE` soft limit to `kern.maxfilesperproc` (61440) before spawning
-the engine, which the child inherits.
+**File watching** uses FSEvents (chokidar 3 + `fsevents`) — one stream for the
+whole tree. chokidar 4 dropped FSEvents on macOS and falls back to one
+`fs.watch` per path; combined with the 256-descriptor soft limit that launchd
+gives GUI apps, that produced `EMFILE` errors on real projects. Measured on a
+1603-directory tree: **44 open descriptors, 86 MB RSS**.
 
-Measured on a 1603-directory / 8000-file tree with the packaged `.app`:
+**Tested** with 68 end-to-end tests covering SFTP and FTP upload/download/sync,
+ignore rules, the Keychain password flow, per-file progress events, low
+descriptor limits, and orphan shutdown. Tests spin up throwaway ssh2 and
+`ftp-srv` servers on localhost — no real server is ever contacted.
 
-| | before (chokidar 4) | after (FSEvents) |
-|---|---|---|
-| open fds | 15,000+ needed → EMFILE | **44** |
-| memory (RSS) | ~212 MB | **86 MB** |
-
-`test/fdlimit.test.mjs` guards against regression: it starts the engine with a
-deliberate 256-descriptor limit and verifies uploads still work across an
-800+ directory tree.
-
-### Possible improvement
-
-Watching could move to the Swift side using the FSEvents API directly, which
-would remove the need to ship the `fsevents` native module. But FSEvents fires
-when a write *starts*, so chokidar's `awaitWriteFinish` behavior — not
-uploading a half-written file — would have to be reimplemented. Not done yet.
-
-## App icon
-
-The icon is drawn programmatically (`icon/render.swift`, CoreGraphics) rather
-than shipped as a binary asset, so every size is regenerated from one source:
-
-    ./icon/make-icns.sh
-
-`build.sh` generates `icon/UpSync.icns` automatically if it is missing.
-
-The artwork is deliberately **full-bleed** — no rounded rectangle is drawn.
-macOS 26 places legacy `.icns` icons on its own standard tile, so drawing our
-own squircle produced a doubled frame (our shape inside a grey system tile).
-Supplying edge-to-edge art lets the system apply its own mask and edge
-lighting. The trade-off: on macOS 15 and earlier the icon renders as a plain
-square with no corner rounding. The proper fix is to add an Icon Composer
-(`.icon`) asset alongside the `.icns`.
-
-## Known limitations
-
-- Node.js must be installed on the system; it is not currently bundled (the
-  Node binary is ~110MB, which would push the `.app` to Electron size).
-- The app is ad-hoc signed, not notarized. Gatekeeper may warn on first
-  launch; right-click → **Open**, or run
-  `xattr -dr com.apple.quarantine /Applications/UpSync.app`.
-- No launch-at-login yet — add it manually under System Settings → General →
-  Login Items.
+```bash
+cd engine && npm install && npm test
+```
 
 ## Releasing
 
-`VERSION` is the single source of truth for the version number; `build.sh`
-reads it and writes it into `Info.plist`.
+`VERSION` is the single source of truth.
 
-    ./release.sh 0.2.0
+```bash
+./release.sh 0.2.0
+```
 
-The script runs the tests, writes and commits the version, builds the `.app`,
-verifies the version inside the bundle, zips it with `ditto` (which preserves
-the code signature), tags `vX.Y.Z`, pushes main and the tag, and publishes to
-GitHub Releases with install notes.
+Runs tests, builds, verifies the version inside the bundle, zips with `ditto`
+(preserving the signature), tags, pushes, and publishes to GitHub Releases.
 
-It requires a clean working tree and an authenticated `gh`, and refuses to run
-if the tag already exists.
+## App icon
+
+Drawn programmatically in `icon/render.swift` — no binary asset, every size
+regenerated from one source with `./icon/make-icns.sh`.
+
+The artwork is full-bleed on purpose. macOS 26 places legacy `.icns` icons on
+its own standard tile, so drawing our own rounded rectangle produced a doubled
+frame. On macOS 15 and earlier this means the icon has square corners; the
+proper fix is to ship an Icon Composer `.icon` asset as well.
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
 
-The transfer engine is derived from
+Transfer engine derived from
 [vscode-sftp](https://github.com/Natizyskunk/vscode-sftp) (MIT, Natizyskunk;
-originally by liximomo). The two bugs found during the port are listed above.
+originally by liximomo).
