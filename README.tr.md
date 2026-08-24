@@ -238,6 +238,24 @@ kapatıp tek kopya açın. (0.2.0'dan itibaren motor ebeveyniyle birlikte
 kapandığı için bunun olmaması gerekir.)
 </details>
 
+<details>
+<summary><b>Bir dosya takılı kalmış gibi görünüyor - hata yok, ilerleme yok</b></summary>
+
+Bağlantı transfer sırasında sessizce ölürse (laptop uykuya girip çıkması, ağ
+değişimi, yarı-açık TCP bağlantısı), transfer eskiden ne hata verirdi ne
+tamamlanırdı - sonsuza kadar öyle kalırdı. 0.2.1'den itibaren takılan bir
+transfer ~20 saniye sonra "No response from server" mesajıyla başarısız
+sayılıyor ve bağlantı kapatılıyor ki bir sonraki deneme temiz bir bağlantı
+kursun.
+
+Bu olduğunda Etkinlik penceresindeki başarısız kayıtta bir tekrar dene
+ikonu belirir - tıklayınca sadece o dosya yeniden gönderilir, ya da
+toolbar'daki **Retry All** ile başarısız olan tüm dosyalar tek seferde
+yeniden denenir (aynı dosya birden fazla kez başarısız olsa bile sadece bir
+kez). Yeniden denemeden sadece kaydı temizlemek isterseniz bir kayda sağ
+tıklayıp **Dismiss** seçebilirsiniz.
+</details>
+
 ## Nasıl çalışıyor
 
 UpSync iki süreçten oluşur: menü çubuğu uygulaması ve onun başlattığı bir Node

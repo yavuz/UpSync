@@ -233,6 +233,22 @@ launch one. (Since 0.2.0 the engine shuts down with its parent, so this should
 no longer happen.)
 </details>
 
+<details>
+<summary><b>A file seems stuck — no error, no progress</b></summary>
+
+If the connection dies silently mid-transfer (laptop sleep, a network change,
+a half-open TCP connection), the transfer used to hang forever with no error
+and no way to retry. As of 0.2.1, a stuck transfer is declared failed after
+~20 seconds with a "No response from server" message, and the connection is
+closed so the next attempt reconnects cleanly.
+
+When that happens, the failed entry in the Activity window gets a retry
+icon — click it to resend just that file, or use **Retry All** in the
+toolbar to resend every failed file at once (each file only once, even if it
+failed more than once). Right-click an entry for **Dismiss** if you just want
+to clear it without retrying.
+</details>
+
 ## How it runs
 
 UpSync is two processes: the menu bar app and a Node engine it spawns as a
