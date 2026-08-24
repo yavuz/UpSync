@@ -28,7 +28,38 @@ function toSimpleFileMode(mode: number) {
   return mode & parseInt('777', 8); // tslint:disable-line:no-bitwise
 }
 
+// Bağlantı sessizce ölürse (laptop uykuya girip çıkması, wifi değişimi,
+// yarı-açık TCP) ssh2'nin promise tabanlı akışları ne 'error' ne 'finish'
+// üretmeden sonsuza kadar asılı kalabiliyor. KeepAliveRemoteFs'in
+// onDisconnected kancası hiç tetiklenmediği için bağlantı "geçerli"
+// sanılmaya devam ediyor ve sonraki her transfer aynı ölü bağlantıyı
+// bekleyerek sıraya giriyor - kullanıcı tarafında "hiçbir şey olmuyor,
+// tekrar deneyemiyorum" olarak görünüyor.
+//
+// Bu yüzden hiçbir veri/onay akışı olmadan geçen süreyi izliyoruz: eşik
+// aşılırsa transferi başarısız ilan edip bağlantıyı zorla kapatıyoruz ki
+// bir sonraki deneme sıfırdan, sağlıklı bir bağlantı kursun.
+const STALL_TIMEOUT_MS = Number(process.env.UPSYNC_STALL_TIMEOUT_MS) || 20000;
+
 export default class SFTPFileSystem extends RemoteFileSystem {
+  // `markProgress` her veri/onay olayında çağrılır ve sayacı sıfırlar.
+  // Süre dolarsa `onStall` bir kere çağrılır.
+  private _stallGuard(onStall: () => void): { markProgress: () => void; clear: () => void } {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const arm = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(onStall, STALL_TIMEOUT_MS);
+    };
+    arm();
+    return {
+      markProgress: arm,
+      clear: () => {
+        if (timer) clearTimeout(timer);
+        timer = null;
+      },
+    };
+  }
+
   get sftp() {
     return this.getClient().getFsClient();
   }
@@ -234,6 +265,24 @@ export default class SFTPFileSystem extends RemoteFileSystem {
       try {
         // const stream = this.sftp.createReadStream(path, opt);
         const stream = this.sftp.createReadStream(path, option);
+
+        // İndirme akışı da yazma akışıyla aynı riski taşıyor: bağlantı
+        // sessizce ölürse ne 'data' ne 'end' ne 'error' gelmeyebilir.
+        // Akış burada resolve edildikten sonra tüketimi çağıranın elinde
+        // olduğu için gözcüyü akışın kendisine bağlıyoruz.
+        const guard = this._stallGuard(() => {
+          const err = new Error(
+            `No response from server for ${STALL_TIMEOUT_MS / 1000}s while downloading ${path} - connection appears to be stuck`
+          );
+          stream.emit('error', err);
+          (stream as any).destroy?.(err);
+          this.end();
+        });
+        stream.on('data', guard.markProgress);
+        stream.once('end', guard.clear);
+        stream.once('error', guard.clear);
+        stream.once('close', guard.clear);
+
         resolve(stream);
       } catch (err) {
         reject(err);
@@ -451,12 +500,50 @@ export default class SFTPFileSystem extends RemoteFileSystem {
   ): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const writer: WriteStream = this.sftp.createWriteStream(path, option);
-      writer.once('error', reject).once('finish', resolve); // transffered
+
+      let settled = false;
+      const guard = this._stallGuard(() => {
+        if (settled) return;
+        settled = true;
+        (writer as any).destroy?.();
+        // Bağlantı muhtemelen ölü; kapat ki bir sonraki deneme yeni ve
+        // sağlıklı bir bağlantı kursun, aynı asılı bağlantıyı beklemesin.
+        this.end();
+        reject(
+          new Error(
+            `No response from server for ${STALL_TIMEOUT_MS / 1000}s while uploading ${path} - connection appears to be stuck`
+          )
+        );
+      });
+
+      writer
+        .once('error', err => {
+          if (settled) return;
+          settled = true;
+          guard.clear();
+          reject(err);
+        })
+        .once('finish', () => {
+          if (settled) return;
+          settled = true;
+          guard.clear();
+          resolve();
+        });
+      // 'drain', yazma tarafının tıkanmayıp veri kabul etmeye devam
+      // ettiğini gösterir - büyük/yavaş dosyalarda sayaç bu sayede
+      // ilerlerken sıfırlanır.
+      writer.on('drain', guard.markProgress);
 
       input.once('error', err => {
+        if (settled) return;
+        settled = true;
+        guard.clear();
         reject(err);
         writer.end();
       });
+      // Küçük dosyalarda tek 'data' olayı gelir; büyüklerinde her paket
+      // ilerlemeyi tazeler.
+      input.on('data', guard.markProgress);
       input.pipe(writer);
     });
   }

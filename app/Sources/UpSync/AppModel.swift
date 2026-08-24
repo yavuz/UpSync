@@ -250,11 +250,11 @@ final class AppModel: ObservableObject {
         let ms = event["ms"] as? Int
         let entryKind: ActivityEntry.Kind =
           kind == "delete" ? .deleted : (kind == "download" ? .downloaded : .uploaded)
-        log(entryKind, path: path, detail: ms.map { "\($0) ms" }, folderId: folderId)
+        log(entryKind, path: path, detail: ms.map { "\($0) ms" }, folderId: folderId, operationKind: kind)
         finishTransfer(folderId, kind: entryKind, path: path)
 
       case "error":
-        log(.failed, path: path, detail: event["message"] as? String, folderId: folderId)
+        log(.failed, path: path, detail: event["message"] as? String, folderId: folderId, operationKind: kind)
         finishTransfer(folderId, kind: .failed, path: path)
 
       default:
@@ -329,14 +329,69 @@ final class AppModel: ObservableObject {
     folders.filter { statuses[$0.id]?.watching == true }.count
   }
 
-  private func log(_ kind: ActivityEntry.Kind, path: String, detail: String?, folderId: String?) {
+  private func log(
+    _ kind: ActivityEntry.Kind,
+    path: String,
+    detail: String?,
+    folderId: String?,
+    operationKind: String? = nil
+  ) {
     activity.insert(
-      ActivityEntry(date: Date(), kind: kind, path: path, detail: detail, folderId: folderId),
+      ActivityEntry(
+        date: Date(), kind: kind, path: path, detail: detail,
+        folderId: folderId, operationKind: operationKind
+      ),
       at: 0
     )
     if activity.count > maxActivity {
       activity.removeLast(activity.count - maxActivity)
     }
+  }
+
+  /// Başarısız tek bir dosyayı yeniden dener. Etkinlik penceresindeki
+  /// "Retry" eylemi bunu çağırır - asılı kalan bir transferin artık en
+  /// azından bir hata olarak görünmesi yetmiyor, kullanıcının onu tekrar
+  /// tetikleyebilmesi gerekiyor.
+  func retry(_ entry: ActivityEntry) {
+    guard let folderId = entry.folderId,
+          let folder = folders.first(where: { $0.id == folderId }) else {
+      return
+    }
+
+    switch entry.operationKind {
+    case "download":
+      run("download", folder: folder, path: entry.path, label: "Retry download")
+    case "delete":
+      Task {
+        do {
+          _ = try await engine?.call("removeRemote", ["id": folder.id, "path": entry.path])
+          log(.deleted, path: entry.path, detail: "Retry succeeded", folderId: folder.id, operationKind: "delete")
+        } catch {
+          log(.failed, path: entry.path, detail: error.localizedDescription, folderId: folder.id, operationKind: "delete")
+        }
+      }
+    default:
+      run("upload", folder: folder, path: entry.path, label: "Retry upload")
+    }
+  }
+
+  /// Verilen listedeki başarısız kayıtların tümünü yeniden dener. Aynı
+  /// dosya (klasör+yol) için birden fazla hata kaydı varsa yalnızca bir
+  /// kez tetiklenir, yoksa aynı dosya için üst üste birden fazla transfer
+  /// kuyruğa girer.
+  func retryAll(_ entries: [ActivityEntry]) {
+    var seen = Set<String>()
+    for entry in entries where entry.isRetryable {
+      let key = "\(entry.folderId ?? "")::\(entry.path)"
+      guard seen.insert(key).inserted else { continue }
+      retry(entry)
+    }
+  }
+
+  /// Bir kaydı listeden kaldırır. Yeniden denemez - kullanıcı hatayı
+  /// gördü ve artık görmek istemiyor demektir.
+  func dismiss(_ entry: ActivityEntry) {
+    activity.removeAll { $0.id == entry.id }
   }
 
   func clearActivity() {

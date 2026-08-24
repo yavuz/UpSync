@@ -161,6 +161,13 @@ function bindSftp(sftp, resolve) {
   sftp.on('WRITE', (reqid, h, offset, data) =>
     guard(reqid, async () => {
       const entry = getHandle(h);
+      // Test amaçlı: belirli bir dosyaya yapılan WRITE'a hiç yanıt
+      // vermeden asılı kalır - bağlantının sessizce öldüğü senaryoyu
+      // taklit eder (ne 'error' ne 'finish', hiçbir şey).
+      const stallFile = process.env.UPSYNC_TEST_STALL_FILE;
+      if (stallFile && entry.path.endsWith(stallFile)) {
+        return; // reqid'e asla yanıt verilmiyor
+      }
       await entry.fd.write(data, 0, data.length, offset);
       sftp.status(reqid, STATUS_CODE.OK);
     })

@@ -123,9 +123,18 @@ struct ActivityEntry: Identifiable, Hashable {
   let path: String
   let detail: String?
   let folderId: String?
+  /// Motorun ham işlem türü ("upload" / "download" / "delete"). Bir hata
+  /// tekrar denendiğinde hangi işlemin yeniden çalıştırılacağını bulmak
+  /// için gerekiyor - `kind` bu bilgiyi "failed" durumunda kaybediyor.
+  let operationKind: String?
 
   var fileName: String {
     path.isEmpty ? "" : URL(fileURLWithPath: path).lastPathComponent
+  }
+
+  /// Bu kaydın tek dosya için yeniden denenebilir olup olmadığı.
+  var isRetryable: Bool {
+    isFailure && folderId != nil && !path.isEmpty && operationKind != nil
   }
 
   var isFailure: Bool { kind == .failed }

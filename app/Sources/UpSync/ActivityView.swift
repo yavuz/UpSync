@@ -7,6 +7,9 @@ struct ActivityRow: View {
   let folderName: String?
   let now: Date
   var compact: Bool = false
+  /// nil ise satırda retry düğmesi hiç gösterilmez (panelin kompakt
+  /// listesi gibi salt-okunur yerlerde).
+  var onRetry: ((ActivityEntry) -> Void)?
 
   var body: some View {
     HStack(alignment: .center, spacing: 8) {
@@ -49,6 +52,18 @@ struct ActivityRow: View {
         .foregroundStyle(.secondary)
         .monospacedDigit()
         .frame(minWidth: compact ? 44 : 56, alignment: .trailing)
+
+      if let onRetry, entry.isRetryable {
+        Button {
+          onRetry(entry)
+        } label: {
+          Image(systemName: "arrow.clockwise")
+            .font(.system(size: compact ? 10 : 11))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .help("Retry")
+      }
     }
   }
 
@@ -88,6 +103,16 @@ struct ActivityView: View {
       }
       return true
     }
+  }
+
+  /// Görünen listedeki, retryAll ile aynı mantıkla tekilleştirilmiş
+  /// (dosya başına bir) yeniden denenebilir kayıt sayısı.
+  private var retryableCount: Int {
+    var seen = Set<String>()
+    for entry in entries where entry.isRetryable {
+      seen.insert("\(entry.folderId ?? "")::\(entry.path)")
+    }
+    return seen.count
   }
 
   var body: some View {
@@ -130,6 +155,11 @@ struct ActivityView: View {
 
       Spacer()
 
+      if retryableCount > 0 {
+        Button("Retry All (\(retryableCount))") { model.retryAll(entries) }
+          .font(.system(size: 12))
+      }
+
       Button("Clear") { model.clearActivity() }
         .font(.system(size: 12))
         .disabled(model.activity.isEmpty)
@@ -154,11 +184,18 @@ struct ActivityView: View {
       ScrollView {
         LazyVStack(spacing: 0) {
           ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
-            ActivityRow(entry: entry, folderName: folderName(entry.folderId), now: now)
+            ActivityRow(
+              entry: entry, folderName: folderName(entry.folderId), now: now,
+              onRetry: { model.retry($0) }
+            )
               .padding(.horizontal, 12)
               .padding(.vertical, 5)
               .background(index.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.03))
               .contextMenu {
+                if entry.isRetryable {
+                  Button("Retry") { model.retry(entry) }
+                  Divider()
+                }
                 if !entry.path.isEmpty {
                   Button("Reveal in Finder") {
                     NSWorkspace.shared.selectFile(entry.path, inFileViewerRootedAtPath: "")
@@ -173,6 +210,13 @@ struct ActivityView: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(detail, forType: .string)
                   }
+                }
+                if entry.isFailure {
+                  Divider()
+                  // Yeniden denemez - kaydı listeden kaldırır. Ayrı bir
+                  // eylem: kullanıcı hatayı gördü, tekrar denemeden
+                  // görmek istemiyor.
+                  Button("Dismiss") { model.dismiss(entry) }
                 }
               }
           }
