@@ -6,7 +6,7 @@ import os from 'os';
 import path from 'path';
 import net from 'net';
 import { FtpSrv } from 'ftp-srv';
-import { startEngine, waitFor } from './client.mjs';
+import { startEngine, waitFor, waitForContent } from './client.mjs';
 
 // Sabit port, art arda koşularda "adres kullanımda" hatasına yol açıyordu.
 // İşletim sisteminden boş port isteyip serbest bırakıyoruz.
@@ -90,11 +90,11 @@ after(async () => {
 });
 
 test('ftp: kaydedilen dosya otomatik yüklenir', async () => {
-  await fsp.writeFile(path.join(localRoot, 'index.html'), '<h1>ftp</h1>');
-  await waitFor(() => fs.existsSync(path.join(remoteRoot, 'index.html')), {
-    label: 'ftp upload',
-  });
-  assert.equal(await fsp.readFile(path.join(remoteRoot, 'index.html'), 'utf8'), '<h1>ftp</h1>');
+  const content = '<h1>ftp</h1>';
+  await fsp.writeFile(path.join(localRoot, 'index.html'), content);
+  const remotePath = path.join(remoteRoot, 'index.html');
+  await waitForContent(fs, remotePath, content, { label: 'ftp upload' });
+  assert.equal(await fsp.readFile(remotePath, 'utf8'), content);
 });
 
 test('ftp: manuel upload ve download', async () => {

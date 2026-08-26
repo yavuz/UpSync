@@ -5,7 +5,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { startSftpServer } from './sftp-server.mjs';
-import { startEngine, waitFor } from './client.mjs';
+import { startEngine, waitFor, waitForContent } from './client.mjs';
 
 let server;
 let engine;
@@ -65,27 +65,36 @@ after(async () => {
 
 const remote = p => path.join(remoteRoot, p);
 
-async function waitForUpload(relPath) {
-  return waitFor(() => fs.existsSync(remote(relPath)), { label: `upload ${relPath}` });
+// SFTP'de OPEN, WRITE tamamlanmadan önce dosyayı boş olarak oluşturur;
+// bu yüzden sadece varlığı değil, beklenen İÇERİĞİ de bekliyoruz - yoksa
+// "yüklendi" sanılıp içerik gelmeden okunabilir.
+async function waitForUpload(relPath, expectedContent) {
+  return waitForContent(fs, remote(relPath), expectedContent, {
+    label: `upload ${relPath}`,
+  });
 }
 
 test('kaydedilen dosya otomatik yüklenir', async () => {
-  await fsp.writeFile(path.join(localRoot, 'index.php'), '<?php echo "merhaba";');
-  await waitForUpload('index.php');
-  assert.equal(await fsp.readFile(remote('index.php'), 'utf8'), '<?php echo "merhaba";');
+  const content = '<?php echo "merhaba";';
+  await fsp.writeFile(path.join(localRoot, 'index.php'), content);
+  await waitForUpload('index.php', content);
+  assert.equal(await fsp.readFile(remote('index.php'), 'utf8'), content);
 });
 
 test('alt klasördeki dosya yolu korunarak yüklenir', async () => {
+  const content = 'tpl icerik';
   await fsp.mkdir(path.join(localRoot, 'app', 'views'), { recursive: true });
-  await fsp.writeFile(path.join(localRoot, 'app', 'views', 'home.tpl'), 'tpl icerik');
-  await waitForUpload(path.join('app', 'views', 'home.tpl'));
+  await fsp.writeFile(path.join(localRoot, 'app', 'views', 'home.tpl'), content);
+  await waitForUpload(path.join('app', 'views', 'home.tpl'), content);
 });
 
 test('dil/uzanti fark etmeksizin yuklenir (.tpl, .sql, .sh)', async () => {
-  await fsp.writeFile(path.join(localRoot, 'dump.sql'), 'select 1;');
-  await fsp.writeFile(path.join(localRoot, 'deploy.sh'), '#!/bin/sh\necho ok');
-  await waitForUpload('dump.sql');
-  await waitForUpload('deploy.sh');
+  const sql = 'select 1;';
+  const sh = '#!/bin/sh\necho ok';
+  await fsp.writeFile(path.join(localRoot, 'dump.sql'), sql);
+  await fsp.writeFile(path.join(localRoot, 'deploy.sh'), sh);
+  await waitForUpload('dump.sql', sql);
+  await waitForUpload('deploy.sh', sh);
 });
 
 test('ignore edilen dosya yuklenmez', async () => {
@@ -96,7 +105,7 @@ test('ignore edilen dosya yuklenmez', async () => {
   // Ignore edilmeyen bir dosyayı işaret olarak kullan: o yüklendiyse
   // izleyici çalışmış ama diğerlerini atlamış demektir.
   await fsp.writeFile(path.join(localRoot, 'isaret.txt'), 'x');
-  await waitForUpload('isaret.txt');
+  await waitForUpload('isaret.txt', 'x');
 
   assert.equal(fs.existsSync(remote(path.join('gizli', 'sir.txt'))), false);
   assert.equal(fs.existsSync(remote('app.log')), false);
@@ -148,7 +157,7 @@ test('sync delete secenegi uzaktaki fazlaligi siler', async () => {
 test('autoDelete acikken lokal silme uzakta da siler', async () => {
   const p = path.join(localRoot, 'silinecek.txt');
   await fsp.writeFile(p, 'gecici');
-  await waitForUpload('silinecek.txt');
+  await waitForUpload('silinecek.txt', 'gecici');
 
   await fsp.unlink(p);
   await waitFor(() => !fs.existsSync(remote('silinecek.txt')), { label: 'remote delete' });

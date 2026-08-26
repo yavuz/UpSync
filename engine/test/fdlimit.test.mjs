@@ -5,7 +5,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { startSftpServer } from './sftp-server.mjs';
-import { startEngine, waitFor } from './client.mjs';
+import { startEngine, waitFor, waitForContent } from './client.mjs';
 
 // Regresyon testi: chokidar 4 macOS FSEvents desteğini kaldırmıştı ve dosya
 // başına fs.watch açıyordu. `open` ile başlatılan bir uygulama launchd'den
@@ -82,17 +82,16 @@ test(`${DIR_COUNT} dizinlik agac ${FD_LIMIT} fd limitinde izlenebiliyor`, () => 
 
 test('dusuk fd limitinde kaydedilen dosya yine de yuklenir', async () => {
   const target = path.join(localRoot, 'mod', 'm200', 'src', 'yeni.php');
-  await fsp.writeFile(target, '<?php echo "fd testi";');
+  const content = '<?php echo "fd testi";';
+  await fsp.writeFile(target, content);
 
-  await waitFor(() => fs.existsSync(path.join(remoteRoot, 'mod/m200/src/yeni.php')), {
+  const remotePath = path.join(remoteRoot, 'mod/m200/src/yeni.php');
+  await waitForContent(fs, remotePath, content, {
     label: 'düşük fd limitinde yükleme',
     timeout: 30000,
   });
 
-  assert.equal(
-    await fsp.readFile(path.join(remoteRoot, 'mod/m200/src/yeni.php'), 'utf8'),
-    '<?php echo "fd testi";'
-  );
+  assert.equal(await fsp.readFile(remotePath, 'utf8'), content);
 });
 
 test('dusuk fd limitinde SSH anahtari da acilabiliyor', () => {

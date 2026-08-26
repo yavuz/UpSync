@@ -80,3 +80,19 @@ export async function waitFor(predicate, { timeout = 15000, interval = 50, label
     await new Promise(r => setTimeout(r, interval));
   }
 }
+
+// SFTP'de OPEN, WRITE tamamlanmadan önce dosyayı boş olarak oluşturur.
+// `waitFor(() => fs.existsSync(...))` bu yüzden yarış durumuna açıktır:
+// yükleme "tamamlandı" sanılıp içerik henüz gelmeden okunabilir. Bu yardımcı
+// hem varlığı hem beklenen içeriği birlikte bekler.
+export async function waitForContent(fs, path, expected, opts = {}) {
+  const check = typeof expected === 'function' ? expected : content => content === expected;
+  return waitFor(() => {
+    if (!fs.existsSync(path)) return false;
+    try {
+      return check(fs.readFileSync(path, 'utf8'));
+    } catch {
+      return false; // okuma sırasında dosya hâlâ yazılıyor olabilir
+    }
+  }, opts);
+}

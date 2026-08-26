@@ -5,7 +5,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { startSftpServer } from './sftp-server.mjs';
-import { startEngine, waitFor } from './client.mjs';
+import { startEngine, waitFor, waitForContent } from './client.mjs';
 
 let server;
 let engine;
@@ -70,11 +70,12 @@ after(async () => {
 test('password: true iken sifre arayuze sorulur ve baglanti kurulur', async () => {
   await fsp.writeFile(path.join(localRoot, 'gizli.txt'), 'sifreli yukleme');
 
-  await waitFor(() => fs.existsSync(path.join(remoteRoot, 'gizli.txt')), {
+  const remotePath = path.join(remoteRoot, 'gizli.txt');
+  await waitForContent(fs, remotePath, 'sifreli yukleme', {
     label: 'sifre sorulup yukleme tamamlanmali',
   });
 
-  assert.equal(await fsp.readFile(path.join(remoteRoot, 'gizli.txt'), 'utf8'), 'sifreli yukleme');
+  assert.equal(await fsp.readFile(remotePath, 'utf8'), 'sifreli yukleme');
   assert.ok(passwordRequests.length > 0, 'motor sifre istemedi');
 });
 
