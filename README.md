@@ -238,9 +238,15 @@ no longer happen.)
 
 If the connection dies silently mid-transfer (laptop sleep, a network change,
 a half-open TCP connection), the transfer used to hang forever with no error
-and no way to retry. As of 0.2.1, a stuck transfer is declared failed after
-~20 seconds with a "No response from server" message, and the connection is
-closed so the next attempt reconnects cleanly.
+and no way to retry. As of 0.2.1, a stuck transfer is declared failed after a
+timeout, and UpSync probes the connection before deciding whether to close
+it — if other transfers are still going through, or the probe gets any reply
+at all, the connection is left alone and only that one file is marked
+failed; it's only torn down and reconnected when the probe itself gets no
+answer either (a genuinely dead connection). This matters when a burst of
+file changes (e.g. from a coding agent editing many files at once) hits the
+server at the same time — one slow file no longer takes the others down
+with it.
 
 When that happens, the failed entry in the Activity window gets a retry
 icon — click it to resend just that file, or use **Retry All** in the

@@ -105,7 +105,16 @@ function bindSftp(sftp, resolve) {
   // her protokol çağrısı bir RTT demek; localhost'ta bu maliyet görünmez.
   const rtt = Number(process.env.UPSYNC_TEST_RTT || 0);
 
+  // Test amaçlı: bağlantının GERÇEKTEN öldüğü senaryoyu taklit eder -
+  // tetiklendikten sonra sunucu HİÇBİR isteğe (REALPATH dahil) yanıt
+  // vermez. Yalnızca belirli bir dosyanın WRITE'ını susturan
+  // UPSYNC_TEST_STALL_FILE'dan farkı bu: o sadece o dosyanın WRITE'ını
+  // durdurur, bağlantının geri kalanı (ör. REALPATH yoklaması) çalışmaya
+  // devam eder - "bağlantı sağlıklı ama meşgul" senaryosunu taklit eder.
+  let goneSilent = false;
+
   const guard = async (reqid, fn) => {
+    if (goneSilent) return;
     try {
       if (rtt > 0) {
         await new Promise(r => setTimeout(r, rtt));
@@ -117,6 +126,7 @@ function bindSftp(sftp, resolve) {
   };
 
   sftp.on('REALPATH', (reqid, p) => {
+    if (goneSilent) return;
     const normalized = path.posix.resolve('/', p === '.' ? '/' : p);
     sftp.name(reqid, [{ filename: normalized, longname: normalized, attrs: {} }]);
   });
@@ -168,6 +178,25 @@ function bindSftp(sftp, resolve) {
       if (stallFile && entry.path.endsWith(stallFile)) {
         return; // reqid'e asla yanıt verilmiyor
       }
+
+      // Test amaçlı: belirli bir dosyaya yazılınca sunucu TÜMÜYLE
+      // sessizleşir (REALPATH dahil) - gerçekten ölü bağlantı senaryosu.
+      const killFile = process.env.UPSYNC_TEST_KILL_CONNECTION_FILE;
+      if (killFile && entry.path.endsWith(killFile)) {
+        goneSilent = true;
+        return;
+      }
+
+      // Test amaçlı: belirli bir dosyayı GERÇEKTEN geç ama sonunda yanıt
+      // verecek şekilde geciktirir - bağlantı ölü değil, sadece meşgul/
+      // yavaş senaryosunu taklit eder (concurrency>1 altında bir dosyanın
+      // diğerlerinin arkasında sırada beklemesi gibi).
+      const delayFile = process.env.UPSYNC_TEST_DELAY_FILE;
+      const delayMs = Number(process.env.UPSYNC_TEST_DELAY_MS || 0);
+      if (delayFile && delayMs > 0 && entry.path.endsWith(delayFile)) {
+        await new Promise(r => setTimeout(r, delayMs));
+      }
+
       await entry.fd.write(data, 0, data.length, offset);
       sftp.status(reqid, STATUS_CODE.OK);
     })

@@ -36,28 +36,142 @@ function toSimpleFileMode(mode: number) {
 // bekleyerek sıraya giriyor - kullanıcı tarafında "hiçbir şey olmuyor,
 // tekrar deneyemiyorum" olarak görünüyor.
 //
-// Bu yüzden hiçbir veri/onay akışı olmadan geçen süreyi izliyoruz: eşik
-// aşılırsa transferi başarısız ilan edip bağlantıyı zorla kapatıyoruz ki
-// bir sonraki deneme sıfırdan, sağlıklı bir bağlantı kursun.
-const STALL_TIMEOUT_MS = Number(process.env.UPSYNC_STALL_TIMEOUT_MS) || 20000;
+// Bu yüzden hiçbir veri/onay akışı olmadan geçen süreyi izliyoruz.
+//
+// Upstream hatası (bir önceki sürüm): eşik 20 saniyeydi - localhost'taki
+// test sunucusuna göre ayarlanmıştı. Gerçek bir sunucuda, özellikle bir
+// "task" birçok dosyayı birden değiştirdiğinde, dosya başına gerçek uçtan
+// uca süre (kuyrukta bekleme + sunucunun gerçekten işlemesi) bunu rahatça
+// aşabiliyordu - bağlantı ölü olmadığı halde dosya "başarısız" sayılıp
+// otomatik olarak bir daha denenmiyordu. Eşik artık çok daha cömert: küçük
+// kaynak dosyaları için makul her senaryoda gereğinden kısa kalmaması,
+// yalnızca gerçekten ölü bir bağlantıda anlamlı olması hedefleniyor.
+const STALL_TIMEOUT_MS = Number(process.env.UPSYNC_STALL_TIMEOUT_MS) || 90000;
+
+// Bir transfer sessiz kalınca bağlantının GERÇEKTEN ölü mü yoksa sadece
+// meşgul mü (ör. bir "task" birçok dosyayı birden değiştirdiğinde, o
+// dosyanın sırası diğerlerinden sonra geldiği için) olduğunu ayırt etmek
+// için ucuz bir REALPATH isteğiyle yokluyoruz. Bu yoklamanın kendi zaman
+// aşımı - bağlantı gerçekten öldüyse bu da yanıtsız kalır.
+const PROBE_TIMEOUT_MS = 5000;
 
 export default class SFTPFileSystem extends RemoteFileSystem {
-  // `markProgress` her veri/onay olayında çağrılır ve sayacı sıfırlar.
-  // Süre dolarsa `onStall` bir kere çağrılır.
+  // Bağlantı üzerindeki HERHANGİ bir transferin en son ilerleme kaydettiği
+  // an. Tek bir SFTPFileSystem = tek bir canlı bağlantı; concurrency > 1
+  // olduğunda birden fazla dosya bu bağlantıyı paylaşıyor.
+  //
+  // Upstream hatası: ilk sürümde her _put/get çağrısı kendi izole
+  // zamanlayıcısına bakıyordu. concurrency:4 gibi bir ayarla 4 dosya aynı
+  // bağlantıdan giderken biri - bağlantı canlı olsa bile, sadece diğer
+  // üçünün arkasında sırada beklediği için - eşik kadar "sessiz" kalırsa
+  // this.end() çağrılıyor ve o an giden diğer 3 dosya da dahil bağlantının
+  // tamamı koparılıyordu. Artık zamanlayıcı bu paylaşılan damgaya bakıyor:
+  // başka bir dosya yakın zamanda ilerlemişse bağlantı meşgul ama sağlıklı
+  // sayılıyor, yalnızca TÜM transferler birlikte sessiz kalırsa asılı
+  // kaldığı kabul ediliyor.
+  private _lastConnectionActivity = Date.now();
+
+  // `markProgress` her veri/onay olayında çağrılır ve paylaşılan damgayı
+  // günceller. Bağlantı genelinde eşik aşılırsa `onStall` bir kere çağrılır.
   private _stallGuard(onStall: () => void): { markProgress: () => void; clear: () => void } {
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const arm = () => {
+    let cleared = false;
+
+    // Yeni bir transferin BAŞLAMASI da bir etkinliktir. Bunu işaretlemezsek
+    // `_lastConnectionActivity` bağlantı kurulduğu andan (ya da önceki
+    // transferin bittiği andan, bir süre boşta kaldıktan sonra) kalma
+    // olabilir - o zaman yeni transferin ilk baytı gelmeden guard anında
+    // "eski" sayıp sahte stall bildirebilir.
+    this._lastConnectionActivity = Date.now();
+
+    const schedule = () => {
       if (timer) clearTimeout(timer);
-      timer = setTimeout(onStall, STALL_TIMEOUT_MS);
+      const idleFor = Date.now() - this._lastConnectionActivity;
+      const remaining = STALL_TIMEOUT_MS - idleFor;
+      if (remaining <= 0) {
+        onStall();
+        return;
+      }
+      // Bağlantı genelinde henüz eşik dolmadı; kalan süre kadar bekleyip
+      // paylaşılan damgayı tekrar kontrol et - bu arada başka bir dosya
+      // ilerleme kaydetmiş olabilir.
+      timer = setTimeout(schedule, remaining);
     };
-    arm();
+    schedule();
+
     return {
-      markProgress: arm,
+      markProgress: () => {
+        this._lastConnectionActivity = Date.now();
+        if (!cleared) {
+          schedule();
+        }
+      },
       clear: () => {
+        cleared = true;
         if (timer) clearTimeout(timer);
         timer = null;
       },
     };
+  }
+
+  // Aynı anda birden fazla transfer sessiz kalırsa hepsi bunu çağırabilir;
+  // tek bir yoklama yeter, aynı anda birden fazla REALPATH göndermeye gerek
+  // yok.
+  private _probeInFlight = false;
+
+  // Bir transfer sessiz kaldığında ÇAĞRILAN taraf (kendi promise'ini
+  // reddeden kod) zaten başarısız sayıldı. Burada asıl karar veriliyor:
+  // bağlantının TAMAMI kapatılsın mı, yoksa bu sadece o dosyaya özgü/geçici
+  // bir yavaşlık mıydı?
+  //
+  // Upstream hatası (bir önceki sürüm): stall algılanır algılanmaz
+  // bağlantı hiç sorgulanmadan `this.end()` ile kapatılıyordu. Bir "task"
+  // birçok dosyayı birden değiştirdiğinde, diğer dosyalar hızlıca bitip
+  // bağlantı gerçekten boşta kaldıktan SONRA sırası gelen tek bir yavaş
+  // dosya bile - bağlantı tamamen sağlıklı olsa dahi - bu şekilde
+  // kapatılıyordu; o an başka hiçbir transfer olmadığı için "paylaşılan
+  // etkinlik" damgası da onu kurtaramıyordu.
+  //
+  // Artık kapatmadan önce ucuz bir REALPATH ile yokluyoruz. Yanıt gelirse
+  // (hata olsa bile - önemli olan protokolün canlı olması) bağlantıya
+  // dokunulmuyor; yalnızca o anki dosya başarısız sayılıp yeniden
+  // denenebilir kalıyor. Yoklama da yanıtsız kalırsa bağlantı gerçekten
+  // ölü demektir ve o zaman kapatılıyor ki sonraki denemeler sıfırdan
+  // bağlansın.
+  private _confirmDeadThenDisconnect() {
+    if (this._probeInFlight || !this.sftp) {
+      return;
+    }
+    this._probeInFlight = true;
+
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      this._probeInFlight = false;
+      this.end();
+    }, PROBE_TIMEOUT_MS);
+
+    try {
+      this.sftp.realpath('.', () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        this._probeInFlight = false;
+        // Bağlantı canlı: başka bekleyen transferlerin de az önce
+        // yaşanan tek dosyalık aksaklık yüzünden gereksiz yere
+        // başarısız sayılmaması için paylaşılan damgayı tazele.
+        this._lastConnectionActivity = Date.now();
+      });
+    } catch {
+      // sftp nesnesine erişilemiyor - bağlantı zaten kullanılamaz durumda.
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        this._probeInFlight = false;
+        this.end();
+      }
+    }
   }
 
   get sftp() {
@@ -276,7 +390,7 @@ export default class SFTPFileSystem extends RemoteFileSystem {
           );
           stream.emit('error', err);
           (stream as any).destroy?.(err);
-          this.end();
+          this._confirmDeadThenDisconnect();
         });
         stream.on('data', guard.markProgress);
         stream.once('end', guard.clear);
@@ -506,14 +620,14 @@ export default class SFTPFileSystem extends RemoteFileSystem {
         if (settled) return;
         settled = true;
         (writer as any).destroy?.();
-        // Bağlantı muhtemelen ölü; kapat ki bir sonraki deneme yeni ve
-        // sağlıklı bir bağlantı kursun, aynı asılı bağlantıyı beklemesin.
-        this.end();
         reject(
           new Error(
             `No response from server for ${STALL_TIMEOUT_MS / 1000}s while uploading ${path} - connection appears to be stuck`
           )
         );
+        // Bağlantı gerçekten ölü mü yoksa sadece meşgul mü - kapatma
+        // kararı yoklamadan sonra veriliyor (bkz. _confirmDeadThenDisconnect).
+        this._confirmDeadThenDisconnect();
       });
 
       writer

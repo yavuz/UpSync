@@ -244,9 +244,14 @@ kapandığı için bunun olmaması gerekir.)
 Bağlantı transfer sırasında sessizce ölürse (laptop uykuya girip çıkması, ağ
 değişimi, yarı-açık TCP bağlantısı), transfer eskiden ne hata verirdi ne
 tamamlanırdı - sonsuza kadar öyle kalırdı. 0.2.1'den itibaren takılan bir
-transfer ~20 saniye sonra "No response from server" mesajıyla başarısız
-sayılıyor ve bağlantı kapatılıyor ki bir sonraki deneme temiz bir bağlantı
-kursun.
+transfer bir süre sonra başarısız sayılıyor, ama UpSync bağlantıyı kapatmadan
+önce yokluyor: başka transferler hâlâ gidiyorsa ya da yoklama herhangi bir
+yanıt alırsa bağlantıya dokunulmuyor, yalnızca o tek dosya başarısız
+işaretleniyor; bağlantı ancak yoklama da yanıtsız kalırsa (gerçekten ölü
+bir bağlantı) kapatılıp yeniden kuruluyor. Bu, bir seferde birçok dosyanın
+değiştiği durumlarda (ör. bir kod ajanının birçok dosyayı birden
+düzenlemesi) önemli - yavaş giden tek bir dosya artık diğerlerini
+beraberinde götürmüyor.
 
 Bu olduğunda Etkinlik penceresindeki başarısız kayıtta bir tekrar dene
 ikonu belirir - tıklayınca sadece o dosya yeniden gönderilir, ya da
