@@ -40,6 +40,7 @@ Client.prototype.setLastMod = function(path: string, date: Date, cb) {
 
 export default class FTPClient extends RemoteClient {
   private connected: boolean = false;
+  private _ended: boolean = false;
 
   _initClient() {
     return new Client();
@@ -89,7 +90,17 @@ export default class FTPClient extends RemoteClient {
   }
 
   end() {
-    return this._client.end();
+    if (this._ended) {
+      return;
+    }
+    this._ended = true;
+    try {
+      this._client.end();
+    } catch {
+      /* zaten kapanmış olabilir */
+    }
+    // Soket olayı gelmese bile havuz bu bağlantının bittiğini öğrensin.
+    this._notifyDisconnected('ended');
   }
 
   getFsClient() {

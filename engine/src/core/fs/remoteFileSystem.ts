@@ -64,6 +64,19 @@ export default abstract class RemoteFileSystem extends FileSystem {
     this.client.onDisconnected(cb);
   }
 
+  // Bağlantı en son ne zamandır sessiz. Havuz, uzun süre boşta kalmış bir
+  // bağlantıyı yeniden kullanmadan önce yoklamak için buna bakıyor.
+  idleFor(): number {
+    return 0;
+  }
+
+  // Bağlantı hâlâ canlı mı? Ucuz bir protokol çağrısıyla sorar; yanıt
+  // gelmezse false döner. Varsayılan olarak "canlı" kabul edilir, çünkü
+  // her protokolün böyle ucuz bir yoklaması yok.
+  probeAlive(_timeoutMs?: number): Promise<boolean> {
+    return Promise.resolve(true);
+  }
+
   end() {
     this.client.end();
   }

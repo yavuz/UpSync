@@ -13,6 +13,7 @@ export default class SSHClient extends RemoteClient {
   private hoppingClients: SSHClient[];
   private _opendFdNum: number = 0;
   private _queuedFdRequireCall: Array<(...args: any[]) => any> = [];
+  private _ended: boolean = false;
 
   _initClient() {
     return new Client();
@@ -308,10 +309,16 @@ export default class SSHClient extends RemoteClient {
         .on('close', () => this.end())
         .on('end', () => this.end())
         .connect({
-          keepaliveInterval: 1000 * 30, // 30 secs, original
+          // Ölü bağlantıyı ne kadar geç fark edersek kullanıcı o kadar
+          // uzun süre "hiçbir şey olmuyor" görüyor: yükleme, yanıtsız
+          // kalan istekte keepalive hatası doğana dek asılı kalıyor.
+          // 30sn x 2 = 90sn'ydi; 10sn x 3 = 30sn hem daha çabuk hem de
+          // tek bir gecikmeli yanıtla yanlış alarm vermeyecek kadar
+          // toleranslı. Trafiği ihmal edilebilir.
+          keepaliveInterval: 1000 * 10,
           // keepaliveInterval: 1000 * 600, // 10 mins
           // keepaliveInterval: 1000 * 1800, // 30 mins
-          keepaliveCountMax: 2, // x2 original
+          keepaliveCountMax: 3,
           // keepaliveCountMax: 3, // x3
           // keepaliveCountMax: 6, // x6
           readyTimeout: interactiveAuth
@@ -358,7 +365,30 @@ export default class SSHClient extends RemoteClient {
   }
 
   end() {
-    this._client.end();
+    if (this._ended) {
+      return;
+    }
+    this._ended = true;
+
+    try {
+      this._client.end();
+    } catch {
+      /* zaten kapanmış olabilir */
+    }
+
+    // `Client.end()` yalnızca FIN gönderir. Uzak uç sessizce gittiyse
+    // (boşta kalan bağlantıyı düşüren NAT/güvenlik duvarı, uykuya dalan
+    // laptop) karşıdan FIN hiç gelmez: soket FIN_WAIT_2'de asılı kalır,
+    // 'close' olayı hiç doğmaz ve ssh2 keepalive'ı da soket artık
+    // yazılabilir olmadığı için susar. Soketi biz kapatıyoruz ki kopuş
+    // her durumda kesin olsun.
+    const sock = (this._client as any)._sock;
+    if (sock && typeof sock.destroy === 'function') {
+      sock.destroy();
+    }
+
+    // Soket olayı gelmese bile havuz bu bağlantının bittiğini öğrensin.
+    this._notifyDisconnected('ended');
 
     if (this.hoppingClients) {
       // last connect first end

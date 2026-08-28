@@ -116,8 +116,53 @@ export default class SFTPFileSystem extends RemoteFileSystem {
 
   // Aynı anda birden fazla transfer sessiz kalırsa hepsi bunu çağırabilir;
   // tek bir yoklama yeter, aynı anda birden fazla REALPATH göndermeye gerek
-  // yok.
-  private _probeInFlight = false;
+  // yok - bekleyenler aynı sonucu paylaşır.
+  private _probePromise: Promise<boolean> | null = null;
+
+  idleFor(): number {
+    return Date.now() - this._lastConnectionActivity;
+  }
+
+  // Ucuz bir REALPATH ile bağlantının canlı olup olmadığını sorar. Yanıtın
+  // içeriği önemli değil - hata bile dönse protokolün canlı olduğunu
+  // gösterir. Yanıt hiç gelmezse bağlantı ölüdür.
+  probeAlive(timeoutMs: number = PROBE_TIMEOUT_MS): Promise<boolean> {
+    if (this._probePromise) {
+      return this._probePromise;
+    }
+
+    this._probePromise = new Promise<boolean>(resolve => {
+      let settled = false;
+      const done = (alive: boolean) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        this._probePromise = null;
+        if (alive) {
+          // Bağlantı canlı: başka bekleyen transferlerin de az önce
+          // yaşanan tek dosyalık aksaklık yüzünden gereksiz yere
+          // başarısız sayılmaması için paylaşılan damgayı tazele.
+          this._lastConnectionActivity = Date.now();
+        }
+        resolve(alive);
+      };
+      const timer = setTimeout(() => done(false), timeoutMs);
+
+      try {
+        const sftp = this.sftp;
+        if (!sftp) {
+          done(false);
+          return;
+        }
+        sftp.realpath('.', () => done(true));
+      } catch {
+        // sftp nesnesine erişilemiyor - bağlantı zaten kullanılamaz durumda.
+        done(false);
+      }
+    });
+
+    return this._probePromise;
+  }
 
   // Bir transfer sessiz kaldığında ÇAĞRILAN taraf (kendi promise'ini
   // reddeden kod) zaten başarısız sayıldı. Burada asıl karar veriliyor:
@@ -139,39 +184,11 @@ export default class SFTPFileSystem extends RemoteFileSystem {
   // ölü demektir ve o zaman kapatılıyor ki sonraki denemeler sıfırdan
   // bağlansın.
   private _confirmDeadThenDisconnect() {
-    if (this._probeInFlight || !this.sftp) {
-      return;
-    }
-    this._probeInFlight = true;
-
-    let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      this._probeInFlight = false;
-      this.end();
-    }, PROBE_TIMEOUT_MS);
-
-    try {
-      this.sftp.realpath('.', () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        this._probeInFlight = false;
-        // Bağlantı canlı: başka bekleyen transferlerin de az önce
-        // yaşanan tek dosyalık aksaklık yüzünden gereksiz yere
-        // başarısız sayılmaması için paylaşılan damgayı tazele.
-        this._lastConnectionActivity = Date.now();
-      });
-    } catch {
-      // sftp nesnesine erişilemiyor - bağlantı zaten kullanılamaz durumda.
-      if (!settled) {
-        settled = true;
-        clearTimeout(timer);
-        this._probeInFlight = false;
+    this.probeAlive().then(alive => {
+      if (!alive) {
         this.end();
       }
-    }
+    });
   }
 
   get sftp() {

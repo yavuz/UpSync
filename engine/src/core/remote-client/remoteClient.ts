@@ -36,6 +36,8 @@ export interface Config {
 export default abstract class RemoteClient {
   protected _client: any;
   protected _option: ConnectOption;
+  private _disconnectListeners: Array<(reason: string) => void> = [];
+  private _clientEventsBound: boolean = false;
 
   constructor(option: ConnectOption) {
     this._option = option;
@@ -69,17 +71,37 @@ export default abstract class RemoteClient {
     return this._doConnect({ ...connectOption, password }, config);
   }
 
-  onDisconnected(cb) {
+  onDisconnected(cb: (reason: string) => void) {
+    this._disconnectListeners.push(cb);
+
+    if (this._clientEventsBound) {
+      return;
+    }
+    this._clientEventsBound = true;
     this._client
       .on('end', () => {
-        cb('end');
+        this._notifyDisconnected('end');
       })
       .on('close', () => {
-        cb('close');
+        this._notifyDisconnected('close');
       })
-      .on('error', err => {
-        cb('error');
+      .on('error', _err => {
+        this._notifyDisconnected('error');
       });
+  }
+
+  // Kopuş yalnızca soket olaylarından öğrenilemiyor: yarı-açık bir soketi
+  // (uzak uç sessizce gitmiş) `end()` ile kapatmak 'close' üretmeyebilir.
+  // Bu yüzden bağlantıyı bilerek kapattığımızda da haber veriyoruz -
+  // havuzun ölü bir bağlantıyı "geçerli" sanmaya devam etmemesi için.
+  protected _notifyDisconnected(reason: string) {
+    for (const cb of this._disconnectListeners.slice()) {
+      try {
+        cb(reason);
+      } catch {
+        /* dinleyici hatası kopuş bildirimini engellemesin */
+      }
+    }
   }
 }
 
