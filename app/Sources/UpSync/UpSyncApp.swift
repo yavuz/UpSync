@@ -1,6 +1,20 @@
 import SwiftUI
 import AppKit
 
+/// Uygulama künyesi. Sürüm Info.plist'ten okunuyor; build.sh oraya kökteki
+/// VERSION dosyasının içeriğini yazıyor. `swift run` ile geliştirirken paket
+/// (ve dolayısıyla plist) olmadığı için "dev" gösteriliyor.
+enum AppInfo {
+  static let version: String = {
+    let value = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+    guard let value, !value.isEmpty else { return "dev" }
+    return value
+  }()
+
+  /// Arayüzde gösterilen biçim: "v0.2.4".
+  static var displayVersion: String { version == "dev" ? "dev" : "v\(version)" }
+}
+
 @main
 struct UpSyncApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate

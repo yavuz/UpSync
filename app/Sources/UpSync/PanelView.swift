@@ -56,6 +56,14 @@ struct PanelView: View {
       Text("UpSync")
         .font(.system(size: 13, weight: .semibold))
 
+      Text(AppInfo.displayVersion)
+        .font(.system(size: 10, weight: .medium))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 5)
+        .padding(.vertical, 1)
+        .background(Capsule().fill(Color.secondary.opacity(0.12)))
+        .help("UpSync \(AppInfo.displayVersion)")
+
       Spacer()
 
       Text(summary)
